@@ -1,16 +1,20 @@
 import 'dart:math';
 import 'card.dart';
+import 'deck_config.dart';
 
 class Deck {
   final List<Card> _cards;
 
   Deck._() : _cards = [];
 
-  factory Deck.standard() {
+  factory Deck.standard([DeckConfig config = const DeckConfig()]) {
     final deck = Deck._();
     for (final suit in Suit.values) {
+      if (!config.suits.contains(suit)) continue;
       for (final rank in Rank.values) {
-        deck._cards.add(Card(suit, rank));
+        if (rank.index >= config.minRank.index) {
+          deck._cards.add(Card(suit, rank));
+        }
       }
     }
     return deck;

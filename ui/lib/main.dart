@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:durak_logic/durak_logic.dart';
 import 'game_screen.dart';
+import 'settings_screen.dart';
 
 void main() {
   runApp(const DurakApp());
@@ -33,11 +35,31 @@ class SetupScreen extends StatefulWidget {
 
 class _SetupScreenState extends State<SetupScreen> {
   int _playerCount = 2;
+  DeckConfig _deckConfig = const DeckConfig();
+
+  Future<void> _openSettings() async {
+    final result = await Navigator.push<DeckConfig>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SettingsScreen(initial: _deckConfig),
+      ),
+    );
+    if (result != null) setState(() => _deckConfig = result);
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('DTFool — Двойной переводной дурак')),
+      appBar: AppBar(
+        title: const Text('DTFool — Двойной переводной дурак'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings),
+            tooltip: 'Настройки',
+            onPressed: _openSettings,
+          ),
+        ],
+      ),
       body: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -62,12 +84,20 @@ class _SetupScreenState extends State<SetupScreen> {
                 ),
               ],
             ),
+            const SizedBox(height: 8),
+            Text(
+              'Колода: ${_deckConfig.cardCount} карт',
+              style: const TextStyle(color: Colors.grey),
+            ),
             const SizedBox(height: 32),
             FilledButton(
               onPressed: () => Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => GameScreen(playerCount: _playerCount),
+                  builder: (_) => GameScreen(
+                    playerCount: _playerCount,
+                    deckConfig: _deckConfig,
+                  ),
                 ),
               ),
               child: const Text('Начать игру'),

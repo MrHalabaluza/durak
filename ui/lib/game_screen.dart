@@ -4,7 +4,12 @@ import 'card_widget.dart';
 
 class GameScreen extends StatefulWidget {
   final int playerCount;
-  const GameScreen({super.key, required this.playerCount});
+  final DeckConfig deckConfig;
+  const GameScreen({
+    super.key,
+    required this.playerCount,
+    required this.deckConfig,
+  });
 
   @override
   State<GameScreen> createState() => _GameScreenState();
@@ -25,7 +30,7 @@ class _GameScreenState extends State<GameScreen> {
 
   void _startGame() {
     final ids = List.generate(widget.playerCount, (i) => 'Игрок ${i + 1}');
-    _game = Game.start(ids);
+    _game = Game.start(ids, config: widget.deckConfig);
     _selectedCard = null;
     _selectedAttackTarget = null;
     _lastError = null;
@@ -407,6 +412,10 @@ class _GameScreenState extends State<GameScreen> {
 
   String _cardName(Card c) {
     final rank = switch (c.rank) {
+      Rank.two => '2',
+      Rank.three => '3',
+      Rank.four => '4',
+      Rank.five => '5',
       Rank.six => '6',
       Rank.seven => '7',
       Rank.eight => '8',

@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'card.dart';
 import 'deck.dart';
+import 'deck_config.dart';
 import 'player.dart';
 import 'game_state.dart';
 
@@ -23,12 +24,13 @@ class Game {
 
   // ── Factory ─────────────────────────────────────────────────────────────────
 
-  factory Game.start(List<String> playerIds, {Random? random}) {
+  factory Game.start(List<String> playerIds,
+      {Random? random, DeckConfig config = const DeckConfig()}) {
     if (playerIds.length < 2 || playerIds.length > 6) {
       throw const GameException('Player count must be 2–6');
     }
     final rng = random ?? Random();
-    final deck = Deck.standard();
+    final deck = Deck.standard(config);
     deck.shuffle(rng);
 
     final players = playerIds.map(Player.new).toList();

@@ -30,6 +30,10 @@ class CardWidget extends StatelessWidget {
     };
 
     final rankLabel = switch (card.rank) {
+      Rank.two => '2',
+      Rank.three => '3',
+      Rank.four => '4',
+      Rank.five => '5',
       Rank.six => '6',
       Rank.seven => '7',
       Rank.eight => '8',

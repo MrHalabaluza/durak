@@ -2,6 +2,7 @@ library durak_logic;
 
 export 'src/card.dart';
 export 'src/deck.dart';
+export 'src/deck_config.dart';
 export 'src/player.dart';
 export 'src/table.dart';
 export 'src/game_state.dart';

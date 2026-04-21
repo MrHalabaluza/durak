@@ -1,6 +1,6 @@
 enum Suit { diamonds, hearts, clubs, spades }
 
-enum Rank { six, seven, eight, nine, ten, jack, queen, king, ace }
+enum Rank { two, three, four, five, six, seven, eight, nine, ten, jack, queen, king, ace }
 
 class Card {
   final Suit suit;
