@@ -18,7 +18,7 @@ class GameScreen extends StatefulWidget {
 class _GameScreenState extends State<GameScreen> {
   late Game _game;
 
-  Card? _selectedCard;
+  Set<Card> _selectedCards = {};
   Card? _selectedAttackTarget;
   String? _lastError;
 
@@ -31,7 +31,7 @@ class _GameScreenState extends State<GameScreen> {
   void _startGame() {
     final ids = List.generate(widget.playerCount, (i) => 'Игрок ${i + 1}');
     _game = Game.start(ids, config: widget.deckConfig);
-    _selectedCard = null;
+    _selectedCards = {};
     _selectedAttackTarget = null;
     _lastError = null;
   }
@@ -43,7 +43,7 @@ class _GameScreenState extends State<GameScreen> {
       try {
         action();
         _lastError = null;
-        _selectedCard = null;
+        _selectedCards = {};
         _selectedAttackTarget = null;
       } on GameException catch (e) {
         _lastError = e.message;
@@ -199,7 +199,7 @@ class _GameScreenState extends State<GameScreen> {
                     CardWidget(
                       card: card,
                       trump: gs.trump,
-                      selected: card == _selectedCard,
+                      selected: _selectedCards.contains(card),
                       onTap: () => _onCardTap(card),
                     ),
                 ],
@@ -278,11 +278,11 @@ class _GameScreenState extends State<GameScreen> {
           const Text('Действия',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
           const SizedBox(height: 12),
-          if (_selectedCard != null)
+          if (_selectedCards.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(bottom: 6),
               child: Text(
-                'Выбрана: ${_cardName(_selectedCard!)}',
+                'Выбрано: ${_selectedCards.map(_cardName).join(', ')}',
                 style: const TextStyle(color: Colors.yellow),
               ),
             ),
@@ -296,26 +296,26 @@ class _GameScreenState extends State<GameScreen> {
             ),
           const Divider(),
           if (gs.phase == GamePhase.attacking)
-            _actionBtn('⚔ Атаковать', _selectedCard != null, _doAttack),
+            _actionBtn('⚔ Атаковать', _selectedCards.isNotEmpty, _doAttack),
           if (gs.phase == GamePhase.defending) ...[
             _actionBtn(
               '🛡 Отбить',
-              _selectedCard != null && _selectedAttackTarget != null,
+              _selectedCards.length == 1 && _selectedAttackTarget != null,
               _doDefend,
             ),
-            _actionBtn('↪ Перевести', _selectedCard != null, _doTransfer),
+            _actionBtn('↪ Перевести', _selectedCards.isNotEmpty, _doTransfer),
             _actionBtn('✋ Взять', true, _doTake),
           ],
           if (gs.phase == GamePhase.adding) ...[
-            _actionBtn('➕ Подкинуть', _selectedCard != null, _doAdd),
+            _actionBtn('➕ Подкинуть', _selectedCards.isNotEmpty, _doAdd),
             _actionBtn('⏭ Пас', true, _doPass),
           ],
           const Divider(),
           _actionBtn(
             '✘ Снять выбор',
-            _selectedCard != null || _selectedAttackTarget != null,
+            _selectedCards.isNotEmpty || _selectedAttackTarget != null,
             () => setState(() {
-              _selectedCard = null;
+              _selectedCards = {};
               _selectedAttackTarget = null;
             }),
           ),
@@ -347,7 +347,15 @@ class _GameScreenState extends State<GameScreen> {
   void _onCardTap(Card card) {
     setState(() {
       _lastError = null;
-      _selectedCard = _selectedCard == card ? null : card;
+      if (_selectedCards.contains(card)) {
+        _selectedCards = Set.from(_selectedCards)..remove(card);
+      } else if (_selectedCards.isEmpty ||
+          _selectedCards.first.rank == card.rank) {
+        _selectedCards = Set.from(_selectedCards)..add(card);
+      } else {
+        // Different rank — start fresh selection.
+        _selectedCards = {card};
+      }
     });
   }
 
@@ -362,28 +370,25 @@ class _GameScreenState extends State<GameScreen> {
   // ── Game actions ─────────────────────────────────────────────────────────────
 
   void _doAttack() {
-    if (_selectedCard == null) return;
-    final card = _selectedCard!;
-    _doAction(() => _game.attack(gs.attacker.id, [card]));
+    if (_selectedCards.isEmpty) return;
+    _doAction(() => _game.attack(gs.attacker.id, _selectedCards.toList()));
   }
 
   void _doDefend() {
-    if (_selectedCard == null || _selectedAttackTarget == null) return;
-    final def = _selectedCard!;
-    final atk = _selectedAttackTarget!;
-    _doAction(() => _game.defend(gs.defender.id, atk, def));
+    if (_selectedCards.length != 1 || _selectedAttackTarget == null) return;
+    _doAction(() => _game.defend(
+        gs.defender.id, _selectedAttackTarget!, _selectedCards.first));
   }
 
   void _doTransfer() {
-    if (_selectedCard == null) return;
-    final card = _selectedCard!;
-    _doAction(() => _game.transfer(gs.defender.id, [card]));
+    if (_selectedCards.isEmpty) return;
+    _doAction(() => _game.transfer(gs.defender.id, _selectedCards.toList()));
   }
 
   void _doAdd() {
-    if (_selectedCard == null) return;
-    final card = _selectedCard!;
-    _doAction(() => _game.addAttack(gs.players[gs.currentAdderIndex].id, [card]));
+    if (_selectedCards.isEmpty) return;
+    _doAction(() => _game.addAttack(
+        gs.players[gs.currentAdderIndex].id, _selectedCards.toList()));
   }
 
   void _doPass() {
