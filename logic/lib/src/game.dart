@@ -14,7 +14,7 @@ class GameException implements Exception {
 
 class Game {
   static const int _initialDeal = 9;
-  static const int _replenishTo = 6;
+  static const int _replenishTo = 9;
   static const int _maxTableCards = 9;
 
   final GameState state;
