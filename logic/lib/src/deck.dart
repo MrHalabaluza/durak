@@ -7,14 +7,12 @@ class Deck {
 
   Deck._() : _cards = [];
 
-  factory Deck.standard([DeckConfig config = const DeckConfig()]) {
+  factory Deck.standard([DeckConfig? config]) {
+    final cfg = config ?? DeckConfig();
     final deck = Deck._();
-    for (final suit in Suit.values) {
-      if (!config.suits.contains(suit)) continue;
-      for (final rank in Rank.values) {
-        if (rank.index >= config.minRank.index) {
-          deck._cards.add(Card(suit, rank));
-        }
+    for (final entry in cfg.counts.entries) {
+      for (var i = 0; i < entry.value; i++) {
+        deck._cards.add(entry.key);
       }
     }
     return deck;

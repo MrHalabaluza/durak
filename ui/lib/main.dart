@@ -35,7 +35,7 @@ class SetupScreen extends StatefulWidget {
 
 class _SetupScreenState extends State<SetupScreen> {
   int _playerCount = 2;
-  DeckConfig _deckConfig = const DeckConfig();
+  DeckConfig _deckConfig = DeckConfig();
 
   Future<void> _openSettings() async {
     final result = await Navigator.push<DeckConfig>(
