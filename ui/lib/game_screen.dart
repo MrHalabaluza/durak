@@ -387,16 +387,16 @@ class _GameScreenState extends State<GameScreen> {
       _lastError = null;
       try {
         final eligible = _game.addingPlayerIds;
-        final toPass = gs.players
-            .where((p) => !p.hasLeft && eligible.contains(p.id) && p.hasCards)
-            .map((p) => p.id)
-            .toList();
-        for (final id in toPass) {
-          if (gs.phase != GamePhase.adding) break;
-          _game.pass(id);
+        final next = gs.players.where((p) =>
+            !p.hasLeft &&
+            eligible.contains(p.id) &&
+            p.hasCards &&
+            !gs.passedPlayers.contains(p.id)).toList();
+        if (next.isNotEmpty) {
+          _game.pass(next.first.id);
+          _selectedCard = null;
+          _selectedAttackTarget = null;
         }
-        _selectedCard = null;
-        _selectedAttackTarget = null;
       } on GameException catch (e) {
         _lastError = e.message;
       }
