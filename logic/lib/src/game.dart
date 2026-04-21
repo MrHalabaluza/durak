@@ -104,6 +104,11 @@ class Game {
 
   Set<String> get addingPlayerIds => _addingPlayerIds();
 
+  /// Max attack cards allowed on the table right now.
+  /// Before the first discard the limit is 5; otherwise 9.
+  int get _effectiveMax =>
+      state.discard.isEmpty ? 5 : _maxTableCards;
+
   // ── Public actions ────────────────────────────────────────────────────────────
 
   /// Attacker plays initial cards — all must share a rank.
@@ -111,7 +116,7 @@ class Game {
     _require(state.phase == GamePhase.attacking, 'Not in attacking phase');
     _require(playerId == state.attacker.id, 'Not your turn to attack');
     _require(cards.isNotEmpty, 'Must play at least one card');
-    _require(cards.length <= _maxTableCards, 'Too many cards');
+    _require(cards.length <= _effectiveMax, 'Too many cards');
     _require(
       cards.map((c) => c.rank).toSet().length == 1,
       'All attacking cards must share a rank',
@@ -188,7 +193,7 @@ class Game {
     _require(player.hasAllCards(cards), 'You do not have those cards');
 
     final totalAfter = state.table.size + cards.length;
-    _require(totalAfter <= _maxTableCards, 'Too many cards on table');
+    _require(totalAfter <= _effectiveMax, 'Too many cards on table');
 
     // Next defender only needs to cover currently uncovered + new cards.
     final uncoveredAfter =
@@ -241,8 +246,8 @@ class Game {
       );
     }
     _require(
-      state.table.size + cards.length <= _maxTableCards,
-      'Too many cards on table (max $_maxTableCards)',
+      state.table.size + cards.length <= _effectiveMax,
+      'Too many cards on table (max $_effectiveMax)',
     );
 
     for (final c in cards) {
