@@ -28,6 +28,10 @@ class GameState {
   GamePhase phase;
   final Set<String> passedPlayers;
 
+  /// Index of the player who currently holds the "add/pass token".
+  /// Starts as the attacker; switches to next-after-defender on pass.
+  int currentAdderIndex;
+
   /// True until the first successful discard (bito) or first take.
   bool isFirstTurn;
 
@@ -44,6 +48,7 @@ class GameState {
   })  : discard = [],
         table = TableState(),
         passedPlayers = {},
+        currentAdderIndex = attackerIndex,
         isFirstTurn = true;
 
   Player get attacker => players[attackerIndex];

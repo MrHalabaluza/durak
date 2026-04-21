@@ -378,29 +378,11 @@ class _GameScreenState extends State<GameScreen> {
   void _doAdd() {
     if (_selectedCard == null) return;
     final card = _selectedCard!;
-    final owner = gs.players.firstWhere((p) => p.hasCard(card));
-    _doAction(() => _game.addAttack(owner.id, [card]));
+    _doAction(() => _game.addAttack(gs.players[gs.currentAdderIndex].id, [card]));
   }
 
   void _doPass() {
-    setState(() {
-      _lastError = null;
-      try {
-        final eligible = _game.addingPlayerIds;
-        final next = gs.players.where((p) =>
-            !p.hasLeft &&
-            eligible.contains(p.id) &&
-            p.hasCards &&
-            !gs.passedPlayers.contains(p.id)).toList();
-        if (next.isNotEmpty) {
-          _game.pass(next.first.id);
-          _selectedCard = null;
-          _selectedAttackTarget = null;
-        }
-      } on GameException catch (e) {
-        _lastError = e.message;
-      }
-    });
+    _doAction(() => _game.pass(gs.players[gs.currentAdderIndex].id));
   }
 
   void _doTake() {

@@ -126,6 +126,7 @@ class Game {
       state.table.addAttack(c);
     }
     state.passedPlayers.clear();
+    state.currentAdderIndex = state.attackerIndex;
     state.phase = GamePhase.defending;
   }
 
@@ -153,6 +154,7 @@ class Game {
 
     if (state.table.isAllDefended) {
       state.passedPlayers.clear();
+      state.currentAdderIndex = state.attackerIndex;
       state.phase = GamePhase.adding;
       _checkAutoEndTurn();
     }
@@ -206,15 +208,15 @@ class Game {
     state.passedPlayers.clear();
   }
 
-  /// Attacker or next-after-defender adds cards whose rank is already on the table.
+  /// Player with the token adds cards whose rank is already on the table.
   void addAttack(String playerId, List<Card> cards) {
     _require(
       state.phase == GamePhase.defending || state.phase == GamePhase.adding,
       'Cannot add cards in this phase',
     );
     _require(
-      _addingPlayerIds().contains(playerId),
-      'Only the attacker and the player after the defender may add cards',
+      playerId == state.players[state.currentAdderIndex].id,
+      'It is not your turn to add cards',
     );
     _require(cards.isNotEmpty, 'Must add at least one card');
 
@@ -240,34 +242,44 @@ class Game {
       player.removeCard(c);
       state.table.addAttack(c);
     }
-    state.passedPlayers.remove(playerId);
+    // Someone added — consecutive-pass tracking resets.
+    state.passedPlayers.clear();
 
     if (state.table.hasUndefended) {
       state.phase = GamePhase.defending;
     }
   }
 
-  /// Attacker or next-after-defender passes their right to add more cards.
-  /// When both eligible players pass, the turn ends successfully.
+  /// Current token-holder passes. Token moves to the other eligible player.
+  /// Turn ends when both players pass consecutively (no card added between).
   void pass(String playerId) {
     _require(state.phase == GamePhase.adding, 'Can only pass during adding phase');
     _require(
-      _addingPlayerIds().contains(playerId),
-      'Only the attacker and the player after the defender may pass',
+      playerId == state.players[state.currentAdderIndex].id,
+      'It is not your turn to pass',
     );
 
     state.passedPlayers.add(playerId);
 
-    final mustPass = _addingPlayerIds()
-        .where((id) {
-          final p = state.players.firstWhere((p) => p.id == id);
-          return !p.hasLeft && p.hasCards;
-        })
-        .toSet();
+    // Find the other eligible adding player (if any).
+    final otherId = _addingPlayerIds()
+        .where((id) => id != playerId)
+        .firstOrNull;
 
-    if (state.passedPlayers.containsAll(mustPass)) {
+    // Turn ends when: only one eligible player (2-player game), other already
+    // passed (both passed consecutively), or other has no cards left to add.
+    if (otherId == null || state.passedPlayers.contains(otherId)) {
       _endTurnSuccess();
+      return;
     }
+    final other = state.players.firstWhere((p) => p.id == otherId);
+    if (other.hasLeft || !other.hasCards) {
+      _endTurnSuccess();
+      return;
+    }
+
+    // Pass the token to the other player.
+    state.currentAdderIndex = state.players.indexOf(other);
   }
 
   /// Defender takes all table cards into their hand. Turn passes to next player.
@@ -287,19 +299,14 @@ class Game {
 
   // ── Internal turn lifecycle ───────────────────────────────────────────────────
 
-  /// Ends the turn immediately if both eligible players (attacker + next-after-defender)
-  /// have either passed or have no cards left to add.
+  /// Ends the turn immediately if no eligible player has cards to add.
   void _checkAutoEndTurn() {
     if (state.phase != GamePhase.adding) return;
-    final mustPass = _addingPlayerIds()
-        .where((id) {
-          final p = state.players.firstWhere((p) => p.id == id);
-          return !p.hasLeft && p.hasCards;
-        })
-        .toSet();
-    if (mustPass.isEmpty || state.passedPlayers.containsAll(mustPass)) {
-      _endTurnSuccess();
-    }
+    final anyCanAdd = _addingPlayerIds().any((id) {
+      final p = state.players.firstWhere((p) => p.id == id);
+      return !p.hasLeft && p.hasCards;
+    });
+    if (!anyCanAdd) _endTurnSuccess();
   }
 
   void _endTurnSuccess() {
