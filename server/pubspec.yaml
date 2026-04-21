@@ -1,0 +1,11 @@
+name: durak_server
+description: WebSocket server for DTFool (Двойной переводной дурак)
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  durak_logic:
+    path: ../logic

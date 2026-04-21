@@ -1,0 +1,6 @@
+.git
+.dart_tool
+**/build/
+**/.dart_tool/
+**/pubspec.lock
+ui/
