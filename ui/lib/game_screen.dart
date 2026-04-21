@@ -310,6 +310,10 @@ class _GameScreenState extends State<GameScreen> {
             _actionBtn('➕ Подкинуть', _selectedCards.isNotEmpty, _doAdd),
             _actionBtn('⏭ Пас', true, _doPass),
           ],
+          if (gs.phase == GamePhase.taking) ...[
+            _actionBtn('➕ Вдогонку', _selectedCards.isNotEmpty, _doAdd),
+            _actionBtn('⏭ Пас', true, _doPass),
+          ],
           const Divider(),
           _actionBtn(
             '✘ Снять выбор',
@@ -412,6 +416,7 @@ class _GameScreenState extends State<GameScreen> {
         GamePhase.attacking => 'Атака',
         GamePhase.defending => 'Защита',
         GamePhase.adding => 'Подкидывание',
+        GamePhase.taking => 'Вдогонку',
         GamePhase.finished => 'Конец',
       };
 

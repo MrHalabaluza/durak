@@ -13,6 +13,9 @@ enum GamePhase {
   /// All cards covered; non-defenders may add more or pass.
   adding,
 
+  /// Defender declared take; neighbors may pile on before cards are taken.
+  taking,
+
   /// Game over.
   finished,
 }

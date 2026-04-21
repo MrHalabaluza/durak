@@ -213,7 +213,9 @@ class Game {
   /// Player with the token adds cards whose rank is already on the table.
   void addAttack(String playerId, List<Card> cards) {
     _require(
-      state.phase == GamePhase.defending || state.phase == GamePhase.adding,
+      state.phase == GamePhase.defending ||
+          state.phase == GamePhase.adding ||
+          state.phase == GamePhase.taking,
       'Cannot add cards in this phase',
     );
     _require(
@@ -229,12 +231,15 @@ class Game {
       'Cards must share a rank already on the table',
     );
 
-    final undefendedAfter =
-        state.table.entries.where((e) => e.isUndefended).length + cards.length;
-    _require(
-      undefendedAfter <= state.defender.handSize,
-      'Defender does not have enough cards to cover',
-    );
+    // Hand-size check is skipped in taking phase — defender takes everything.
+    if (state.phase != GamePhase.taking) {
+      final undefendedAfter =
+          state.table.entries.where((e) => e.isUndefended).length + cards.length;
+      _require(
+        undefendedAfter <= state.defender.handSize,
+        'Defender does not have enough cards to cover',
+      );
+    }
     _require(
       state.table.size + cards.length <= _maxTableCards,
       'Too many cards on table (max $_maxTableCards)',
@@ -247,7 +252,8 @@ class Game {
     // Someone added — consecutive-pass tracking resets.
     state.passedPlayers.clear();
 
-    if (state.table.hasUndefended) {
+    // Don't flip back to defending when defender is already taking.
+    if (state.phase != GamePhase.taking && state.table.hasUndefended) {
       state.phase = GamePhase.defending;
     }
   }
@@ -255,7 +261,10 @@ class Game {
   /// Current token-holder passes. Token moves to the other eligible player.
   /// Turn ends when both players pass consecutively (no card added between).
   void pass(String playerId) {
-    _require(state.phase == GamePhase.adding, 'Can only pass during adding phase');
+    _require(
+      state.phase == GamePhase.adding || state.phase == GamePhase.taking,
+      'Can only pass during adding or taking phase',
+    );
     _require(
       playerId == state.players[state.currentAdderIndex].id,
       'It is not your turn to pass',
@@ -271,12 +280,20 @@ class Game {
     // Turn ends when: only one eligible player (2-player game), other already
     // passed (both passed consecutively), or other has no cards left to add.
     if (otherId == null || state.passedPlayers.contains(otherId)) {
-      _endTurnSuccess();
+      if (state.phase == GamePhase.taking) {
+        _executeTake();
+      } else {
+        _endTurnSuccess();
+      }
       return;
     }
     final other = state.players.firstWhere((p) => p.id == otherId);
     if (other.hasLeft || !other.hasCards) {
-      _endTurnSuccess();
+      if (state.phase == GamePhase.taking) {
+        _executeTake();
+      } else {
+        _endTurnSuccess();
+      }
       return;
     }
 
@@ -284,19 +301,15 @@ class Game {
     state.currentAdderIndex = state.players.indexOf(other);
   }
 
-  /// Defender takes all table cards into their hand. Turn passes to next player.
+  /// Defender declares they will take. Neighbors may still pile on (phase=taking).
   void take(String playerId) {
     _require(state.phase == GamePhase.defending, 'Can only take during defending phase');
     _require(playerId == state.defender.id, 'Only the defender can take');
 
-    state.isFirstTurn = false;
-    state.defender.addCards(state.table.takeAll());
-
-    final nextAtkIdx = state.nextActiveIndex(state.defenderIndex);
-    _replenishAndAdvance(
-      replenishFrom: state.nextActiveIndex(state.defenderIndex),
-      nextAttackerIdx: nextAtkIdx,
-    );
+    state.passedPlayers.clear();
+    state.currentAdderIndex = state.attackerIndex;
+    state.phase = GamePhase.taking;
+    _checkAutoEndTake();
   }
 
   // ── Internal turn lifecycle ───────────────────────────────────────────────────
@@ -309,6 +322,26 @@ class Game {
       return !p.hasLeft && p.hasCards;
     });
     if (!anyCanAdd) _endTurnSuccess();
+  }
+
+  /// Executes take immediately if no eligible player has cards to pile on.
+  void _checkAutoEndTake() {
+    if (state.phase != GamePhase.taking) return;
+    final anyCanAdd = _addingPlayerIds().any((id) {
+      final p = state.players.firstWhere((p) => p.id == id);
+      return !p.hasLeft && p.hasCards;
+    });
+    if (!anyCanAdd) _executeTake();
+  }
+
+  void _executeTake() {
+    state.isFirstTurn = false;
+    state.defender.addCards(state.table.takeAll());
+    final nextAtkIdx = state.nextActiveIndex(state.defenderIndex);
+    _replenishAndAdvance(
+      replenishFrom: state.nextActiveIndex(state.defenderIndex),
+      nextAttackerIdx: nextAtkIdx,
+    );
   }
 
   void _endTurnSuccess() {
