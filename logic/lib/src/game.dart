@@ -133,6 +133,7 @@ class Game {
       state.table.addAttack(c);
     }
     state.passedPlayers.clear();
+    state.transitUsedThisTurn.clear();
     state.currentAdderIndex = state.attackerIndex;
     state.phase = GamePhase.defending;
   }
@@ -213,6 +214,61 @@ class Game {
     state.defenderIndex = nextDefIdx;
     state.currentAdderIndex = state.attackerIndex;
     state.passedPlayers.clear();
+    state.transitUsedThisTurn.clear();
+  }
+
+  /// Defender shows a trump card matching the uncovered attack rank to transfer
+  /// the attack without placing the card on the table. The card stays in hand
+  /// and may still be used for a regular transfer later this turn.
+  /// Each physical copy of a card may be used as transit once per turn.
+  void transit(String playerId, Card card) {
+    _require(state.phase == GamePhase.defending, 'Not in defending phase');
+    _require(playerId == state.defender.id, 'Only the defender can use transit');
+    _require(!state.isFirstTurn, 'Transit is not allowed on the first turn');
+
+    final player = _requirePlayer(playerId);
+    _require(player.hasCard(card), 'You do not have that card');
+    _require(card.suit == state.trump, 'Transit card must be trump');
+
+    final uncoveredRanks = state.table.entries
+        .where((e) => e.isUndefended)
+        .map((e) => e.attack.rank)
+        .toSet();
+    _require(uncoveredRanks.isNotEmpty, 'No uncovered cards to transfer');
+    _require(
+      uncoveredRanks.length == 1,
+      'All uncovered attack cards must share a rank to transit',
+    );
+    _require(
+      card.rank == uncoveredRanks.first,
+      'Transit card rank must match the uncovered attack rank',
+    );
+
+    // Each physical copy may be used as transit once per turn.
+    final usedCount = state.transitUsedThisTurn[card] ?? 0;
+    final availableCount = player.hand.where((c) => c == card).length;
+    _require(
+      usedCount < availableCount,
+      'This card has already been used for transit this turn',
+    );
+
+    final nextDefIdx = state.nextActiveIndex(state.defenderIndex);
+    final uncoveredCount =
+        state.table.entries.where((e) => e.isUndefended).length;
+    _require(
+      uncoveredCount <= state.players[nextDefIdx].handSize,
+      'Next player does not have enough cards to defend',
+    );
+
+    state.transitUsedThisTurn[card] = usedCount + 1;
+
+    // Former defender becomes new attacker; next player becomes defender.
+    state.attackerIndex = state.defenderIndex;
+    state.defenderIndex = nextDefIdx;
+    state.currentAdderIndex = state.attackerIndex;
+    state.passedPlayers.clear();
+    // Clear transit tracking for the new defender.
+    state.transitUsedThisTurn.clear();
   }
 
   /// Player with the token adds cards whose rank is already on the table.
@@ -409,6 +465,7 @@ class Game {
     state.defenderIndex = state.nextActiveIndex(atkIdx);
     state.currentAdderIndex = atkIdx;
     state.passedPlayers.clear();
+    state.transitUsedThisTurn.clear();
     state.phase = GamePhase.attacking;
   }
 }

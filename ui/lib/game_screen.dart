@@ -309,6 +309,11 @@ class _GameScreenState extends State<GameScreen> {
               _doDefend,
             ),
             _actionBtn('↪ Перевести', _selectedCards.isNotEmpty, _doTransfer),
+            _actionBtn(
+              '🎫 Проездной',
+              _selectedCards.length == 1,
+              _doTransit,
+            ),
             _actionBtn('✋ Взять', true, _doTake),
           ],
           if (gs.phase == GamePhase.adding) ...[
@@ -395,6 +400,11 @@ class _GameScreenState extends State<GameScreen> {
   void _doTransfer() {
     if (_selectedCards.isEmpty) return;
     _doAction(() => _game.transfer(gs.defender.id, _selectedCards.toList()));
+  }
+
+  void _doTransit() {
+    if (_selectedCards.length != 1) return;
+    _doAction(() => _game.transit(gs.defender.id, _selectedCards.first));
   }
 
   void _doAdd() {
