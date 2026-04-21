@@ -147,13 +147,13 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   Widget _buildPlayerHand(Player player) {
-    final isAttacker = player.id == gs.attacker.id;
+    final isTokenHolder = player.id == gs.players[gs.currentAdderIndex].id;
     final isDefender = player.id == gs.defender.id;
 
     String role = '';
     if (player.hasLeft) {
       role = ' ✓ вышел';
-    } else if (isAttacker) {
+    } else if (isTokenHolder) {
       role = ' ⚔ ходит';
     } else if (isDefender) {
       role = ' 🛡 отбивает';
@@ -162,7 +162,7 @@ class _GameScreenState extends State<GameScreen> {
     Color? bgColor;
     if (player.hasLeft) {
       bgColor = Colors.grey.shade800;
-    } else if (isAttacker) {
+    } else if (isTokenHolder) {
       bgColor = Colors.orange.shade900;
     } else if (isDefender) {
       bgColor = Colors.blue.shade900;
