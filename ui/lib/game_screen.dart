@@ -383,12 +383,12 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   void _doPass() {
-    // Debug UI: pass for every non-defender with cards in one click.
     setState(() {
       _lastError = null;
       try {
+        final eligible = _game.addingPlayerIds;
         final toPass = gs.players
-            .where((p) => !p.hasLeft && p.id != gs.defender.id && p.hasCards)
+            .where((p) => !p.hasLeft && eligible.contains(p.id) && p.hasCards)
             .map((p) => p.id)
             .toList();
         for (final id in toPass) {

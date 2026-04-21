@@ -100,6 +100,8 @@ class Game {
     return ids;
   }
 
+  Set<String> get addingPlayerIds => _addingPlayerIds();
+
   // ── Public actions ────────────────────────────────────────────────────────────
 
   /// Attacker plays initial cards — all must share a rank.
@@ -143,13 +145,10 @@ class Game {
     );
     player.removeCard(defenseCard);
 
-    // Rule: if no cards have been discarded yet and 5+ are now covered, end the turn.
-    if (state.discard.isEmpty) {
-      final covered = state.table.entries.where((e) => e.defense != null).length;
-      if (covered >= 5) {
-        _endTurnSuccess();
-        return;
-      }
+    final coveredCount = state.table.entries.where((e) => e.defense != null).length;
+    if (coveredCount >= _maxTableCards || (state.discard.isEmpty && coveredCount >= 5)) {
+      _endTurnSuccess();
+      return;
     }
 
     if (state.table.isAllDefended) {
