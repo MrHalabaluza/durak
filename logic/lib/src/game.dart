@@ -154,7 +154,6 @@ class Game {
 
     if (state.table.isAllDefended) {
       state.passedPlayers.clear();
-      state.currentAdderIndex = state.attackerIndex;
       state.phase = GamePhase.adding;
       _checkAutoEndTurn();
     }
@@ -205,6 +204,7 @@ class Game {
     // Former defender becomes new attacker; next player becomes defender.
     state.attackerIndex = state.defenderIndex;
     state.defenderIndex = nextDefIdx;
+    state.currentAdderIndex = state.attackerIndex;
     state.passedPlayers.clear();
   }
 
