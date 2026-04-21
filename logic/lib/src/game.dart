@@ -407,6 +407,7 @@ class Game {
     }
     state.attackerIndex = atkIdx;
     state.defenderIndex = state.nextActiveIndex(atkIdx);
+    state.currentAdderIndex = atkIdx;
     state.passedPlayers.clear();
     state.phase = GamePhase.attacking;
   }
