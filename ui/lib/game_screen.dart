@@ -18,9 +18,14 @@ class GameScreen extends StatefulWidget {
 class _GameScreenState extends State<GameScreen> {
   late Game _game;
 
-  Set<Card> _selectedCards = {};
+  final Set<(String, int)> _selectedPositions = {};
   Card? _selectedAttackTarget;
   String? _lastError;
+
+  List<Card> get _selectedCards => _selectedPositions.map((pos) {
+        final player = gs.players.firstWhere((p) => p.id == pos.$1);
+        return player.hand[pos.$2];
+      }).toList();
 
   @override
   void initState() {
@@ -31,7 +36,7 @@ class _GameScreenState extends State<GameScreen> {
   void _startGame() {
     final ids = List.generate(widget.playerCount, (i) => 'Игрок ${i + 1}');
     _game = Game.start(ids, config: widget.deckConfig);
-    _selectedCards = {};
+    _selectedPositions.clear();
     _selectedAttackTarget = null;
     _lastError = null;
   }
@@ -43,7 +48,7 @@ class _GameScreenState extends State<GameScreen> {
       try {
         action();
         _lastError = null;
-        _selectedCards = {};
+        _selectedPositions.clear();
         _selectedAttackTarget = null;
       } on GameException catch (e) {
         _lastError = e.message;
@@ -195,12 +200,12 @@ class _GameScreenState extends State<GameScreen> {
                 spacing: 4,
                 runSpacing: 4,
                 children: [
-                  for (final card in player.hand)
+                  for (var i = 0; i < player.hand.length; i++)
                     CardWidget(
-                      card: card,
+                      card: player.hand[i],
                       trump: gs.trump,
-                      selected: _selectedCards.contains(card),
-                      onTap: () => _onCardTap(card),
+                      selected: _selectedPositions.contains((player.id, i)),
+                      onTap: () => _onCardTap(player, i),
                     ),
                 ],
               )
@@ -319,7 +324,7 @@ class _GameScreenState extends State<GameScreen> {
             '✘ Снять выбор',
             _selectedCards.isNotEmpty || _selectedAttackTarget != null,
             () => setState(() {
-              _selectedCards = {};
+              _selectedPositions.clear();
               _selectedAttackTarget = null;
             }),
           ),
@@ -348,17 +353,20 @@ class _GameScreenState extends State<GameScreen> {
 
   // ── Tap handlers ─────────────────────────────────────────────────────────────
 
-  void _onCardTap(Card card) {
+  void _onCardTap(Player player, int index) {
+    final card = player.hand[index];
+    final pos = (player.id, index);
     setState(() {
       _lastError = null;
-      if (_selectedCards.contains(card)) {
-        _selectedCards = Set.from(_selectedCards)..remove(card);
-      } else if (_selectedCards.isEmpty ||
+      if (_selectedPositions.contains(pos)) {
+        _selectedPositions.remove(pos);
+      } else if (_selectedPositions.isEmpty ||
           _selectedCards.first.rank == card.rank) {
-        _selectedCards = Set.from(_selectedCards)..add(card);
+        _selectedPositions.add(pos);
       } else {
-        // Different rank — start fresh selection.
-        _selectedCards = {card};
+        _selectedPositions
+          ..clear()
+          ..add(pos);
       }
     });
   }
