@@ -261,6 +261,17 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     });
   }
 
+  void _transferByDrag(_RemoteGS gs, int handIndex) {
+    final cards = _selectedHandIndices.contains(handIndex) &&
+            _selectedHandIndices.isNotEmpty
+        ? _selectedCards
+        : [gs.hand[handIndex]];
+    _doAction({
+      'type': 'transfer',
+      'cards': cards.map(_serCard).toList(),
+    });
+  }
+
   // ── Build ─────────────────────────────────────────────────────────────────
 
   static const _suitSymbol = {
@@ -400,7 +411,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
         : isMe
             ? Theme.of(context).colorScheme.primary
             : Colors.grey.shade700;
-    final borderWidth = isActor ? 2.5 : (isMe ? 2.0 : 1.0);
+    final borderWidth = isActor ? 2.5 : 1.0;
 
     return Padding(
       padding: const EdgeInsets.only(right: 8),
@@ -460,30 +471,36 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
   }
 
   Widget _buildTable(_RemoteGS gs) {
-    final canDrop = (_imAttacker && gs.phase == GamePhase.attacking) ||
+    final isTransferDrop = _imDefender && gs.phase == GamePhase.defending;
+    final canDrop = isTransferDrop ||
+        (_imAttacker && gs.phase == GamePhase.attacking) ||
         (_canAdd &&
             (gs.phase == GamePhase.adding || gs.phase == GamePhase.taking));
 
     return DragTarget<int>(
       onWillAcceptWithDetails: (_) => canDrop,
-      onAcceptWithDetails: (d) => _attackByDrag(gs, d.data),
+      onAcceptWithDetails: (d) => isTransferDrop
+          ? _transferByDrag(gs, d.data)
+          : _attackByDrag(gs, d.data),
       builder: (context, candidateData, _) {
         final hovering = candidateData.isNotEmpty;
+        final hoverColor = isTransferDrop ? Colors.lightBlue : Colors.orange;
         return AnimatedContainer(
           duration: const Duration(milliseconds: 120),
           decoration: hovering
               ? BoxDecoration(
-                  border:
-                      Border.all(color: Colors.orange.withAlpha(160), width: 2),
+                  border: Border.all(color: hoverColor.withAlpha(160), width: 2),
                   borderRadius: BorderRadius.circular(8),
                 )
               : null,
           child: gs.table.isEmpty
               ? Center(
                   child: Text(
-                    hovering ? 'Бросить карту' : 'Стол пуст',
+                    hovering
+                        ? (isTransferDrop ? 'Перевести' : 'Бросить карту')
+                        : 'Стол пуст',
                     style: TextStyle(
-                      color: hovering ? Colors.orange : Colors.grey,
+                      color: hovering ? hoverColor : Colors.grey,
                       fontSize: 16,
                     ),
                   ),

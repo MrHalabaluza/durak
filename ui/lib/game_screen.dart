@@ -201,12 +201,7 @@ class _GameScreenState extends State<GameScreen> {
                 runSpacing: 4,
                 children: [
                   for (var i = 0; i < player.hand.length; i++)
-                    CardWidget(
-                      card: player.hand[i],
-                      trump: gs.trump,
-                      selected: _selectedPositions.contains((player.id, i)),
-                      onTap: () => _onCardTap(player, i),
-                    ),
+                    _buildHandCard(player, i),
                 ],
               )
             else
@@ -218,32 +213,55 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   Widget _buildTablePanel() {
-    return Padding(
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('Стол',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          if (gs.table.isEmpty)
-            const Text('Стол пуст', style: TextStyle(color: Colors.grey))
-          else
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
+    final canTransfer = gs.phase == GamePhase.defending;
+    return DragTarget<int>(
+      onWillAcceptWithDetails: (_) => canTransfer,
+      onAcceptWithDetails: (d) => _doTransferByDrag(d.data),
+      builder: (context, candidateData, _) {
+        final hovering = candidateData.isNotEmpty;
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          decoration: hovering
+              ? BoxDecoration(
+                  border: Border.all(
+                      color: Colors.lightBlue.withAlpha(160), width: 2),
+                  borderRadius: BorderRadius.circular(8),
+                )
+              : null,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                for (final entry in gs.table.entries)
-                  _buildTableEntry(entry),
+                const Text('Стол',
+                    style:
+                        TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                if (gs.table.isEmpty)
+                  Text(
+                    hovering ? 'Перевести' : 'Стол пуст',
+                    style: TextStyle(
+                        color: hovering ? Colors.lightBlue : Colors.grey),
+                  )
+                else
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: [
+                      for (final entry in gs.table.entries)
+                        _buildTableEntry(entry),
+                    ],
+                  ),
+                const Spacer(),
+                Text(
+                  'В отбое: ${gs.discard.length} карт',
+                  style: const TextStyle(color: Colors.grey),
+                ),
               ],
             ),
-          const Spacer(),
-          Text(
-            'В отбое: ${gs.discard.length} карт',
-            style: const TextStyle(color: Colors.grey),
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -338,7 +356,8 @@ class _GameScreenState extends State<GameScreen> {
             'Как пользоваться:\n'
             '1. Нажми карту в руке → выбрать\n'
             '2. Для отбоя: нажми атакующую карту на столе → цель\n'
-            '3. Нажми действие',
+            '3. Нажми действие\n'
+            '4. Перевод — перетащи карту на стол',
             style: TextStyle(fontSize: 11, color: Colors.grey),
           ),
         ],
@@ -353,6 +372,33 @@ class _GameScreenState extends State<GameScreen> {
         onPressed: enabled ? onPressed : null,
         child: Text(label),
       ),
+    );
+  }
+
+  Widget _buildHandCard(Player player, int i) {
+    final card = CardWidget(
+      card: player.hand[i],
+      trump: gs.trump,
+      selected: _selectedPositions.contains((player.id, i)),
+      onTap: () => _onCardTap(player, i),
+    );
+    if (player.id != gs.defender.id || gs.phase != GamePhase.defending) {
+      return card;
+    }
+    return Draggable<int>(
+      data: i,
+      feedback: Material(
+        color: Colors.transparent,
+        child: Transform.scale(
+          scale: 1.1,
+          child: CardWidget(card: player.hand[i], trump: gs.trump, selected: true),
+        ),
+      ),
+      childWhenDragging: Opacity(
+        opacity: 0.35,
+        child: CardWidget(card: player.hand[i], trump: gs.trump),
+      ),
+      child: card,
     );
   }
 
@@ -400,6 +446,15 @@ class _GameScreenState extends State<GameScreen> {
   void _doTransfer() {
     if (_selectedCards.isEmpty) return;
     _doAction(() => _game.transfer(gs.defender.id, _selectedCards.toList()));
+  }
+
+  void _doTransferByDrag(int cardIndex) {
+    final defender = gs.defender;
+    final pos = (defender.id, cardIndex);
+    final cards = _selectedPositions.contains(pos) && _selectedPositions.isNotEmpty
+        ? _selectedCards.toList()
+        : [defender.hand[cardIndex]];
+    _doAction(() => _game.transfer(defender.id, cards));
   }
 
   void _doTransit() {
