@@ -6,6 +6,7 @@ import 'lobby_screen.dart';
 import 'settings_screen.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(const DurakApp());
 }
 
@@ -42,6 +43,14 @@ class _SetupScreenState extends State<SetupScreen> {
   AppSettings _settings = AppSettings();
   _GameMode _mode = _GameMode.local;
 
+  @override
+  void initState() {
+    super.initState();
+    AppSettings.load().then((s) {
+      if (mounted) setState(() => _settings = s);
+    });
+  }
+
   Future<void> _openSettings() async {
     final result = await Navigator.push<AppSettings>(
       context,
@@ -49,7 +58,10 @@ class _SetupScreenState extends State<SetupScreen> {
         builder: (_) => SettingsScreen(initial: _settings),
       ),
     );
-    if (result != null) setState(() => _settings = result);
+    if (result != null) {
+      setState(() => _settings = result);
+      result.save();
+    }
   }
 
   void _startLocal() {
