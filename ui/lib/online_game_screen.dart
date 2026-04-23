@@ -238,6 +238,29 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
 
   void _take() => _doAction({'type': 'take'});
 
+  void _attackByDrag(_RemoteGS gs, int handIndex) {
+    // If the dragged card is part of the current selection, send all selected;
+    // otherwise send just the dragged card.
+    final cards = _selectedHandIndices.contains(handIndex) &&
+            _selectedHandIndices.isNotEmpty
+        ? _selectedCards
+        : [gs.hand[handIndex]];
+    final isAdding =
+        gs.phase == GamePhase.adding || gs.phase == GamePhase.taking;
+    _doAction({
+      'type': isAdding ? 'add_attack' : 'attack',
+      'cards': cards.map(_serCard).toList(),
+    });
+  }
+
+  void _defendByDrag(Card attackCard, int handIndex) {
+    _doAction({
+      'type': 'defend',
+      'attackCard': _serCard(attackCard),
+      'defenseCard': _serCard(_gs!.hand[handIndex]),
+    });
+  }
+
   // ── Build ─────────────────────────────────────────────────────────────────
 
   static const _suitSymbol = {
@@ -437,55 +460,88 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
   }
 
   Widget _buildTable(_RemoteGS gs) {
-    if (gs.table.isEmpty) {
-      return const Center(
-        child: Text('Стол пуст',
-            style: TextStyle(color: Colors.grey, fontSize: 16)),
-      );
-    }
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Wrap(
-        spacing: 16,
-        runSpacing: 16,
-        children: gs.table.map((e) => _buildTableEntry(e, gs)).toList(),
-      ),
+    final canDrop = (_imAttacker && gs.phase == GamePhase.attacking) ||
+        (_canAdd &&
+            (gs.phase == GamePhase.adding || gs.phase == GamePhase.taking));
+
+    return DragTarget<int>(
+      onWillAcceptWithDetails: (_) => canDrop,
+      onAcceptWithDetails: (d) => _attackByDrag(gs, d.data),
+      builder: (context, candidateData, _) {
+        final hovering = candidateData.isNotEmpty;
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          decoration: hovering
+              ? BoxDecoration(
+                  border:
+                      Border.all(color: Colors.orange.withAlpha(160), width: 2),
+                  borderRadius: BorderRadius.circular(8),
+                )
+              : null,
+          child: gs.table.isEmpty
+              ? Center(
+                  child: Text(
+                    hovering ? 'Бросить карту' : 'Стол пуст',
+                    style: TextStyle(
+                      color: hovering ? Colors.orange : Colors.grey,
+                      fontSize: 16,
+                    ),
+                  ),
+                )
+              : SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: Wrap(
+                    spacing: 16,
+                    runSpacing: 16,
+                    children:
+                        gs.table.map((e) => _buildTableEntry(e, gs)).toList(),
+                  ),
+                ),
+        );
+      },
     );
   }
 
   Widget _buildTableEntry(_RemoteEntry entry, _RemoteGS gs) {
-    final canSelect =
+    final canDefend =
         _imDefender && gs.phase == GamePhase.defending && entry.defense == null;
     final isSelected = _selectedAttackCard == entry.attack;
 
-    return GestureDetector(
-      onTap: canSelect
-          ? () => setState(() =>
-              _selectedAttackCard = isSelected ? null : entry.attack)
-          : null,
-      child: SizedBox(
-        width: 72,
-        height: 96,
-        child: Stack(
-          children: [
-            CardWidget(
-              card: entry.attack,
-              trump: gs.trump,
-              selected: isSelected,
-              highlighted: canSelect && !isSelected,
-            ),
-            if (entry.defense != null)
-              Positioned(
-                top: 16,
-                left: 16,
-                child: CardWidget(
-                  card: entry.defense!,
+    return DragTarget<int>(
+      onWillAcceptWithDetails: (_) => canDefend,
+      onAcceptWithDetails: (d) => _defendByDrag(entry.attack, d.data),
+      builder: (context, candidateData, _) {
+        final hovering = candidateData.isNotEmpty;
+        return GestureDetector(
+          onTap: canDefend
+              ? () => setState(() =>
+                  _selectedAttackCard = isSelected ? null : entry.attack)
+              : null,
+          child: SizedBox(
+            width: 72,
+            height: 96,
+            child: Stack(
+              children: [
+                CardWidget(
+                  card: entry.attack,
                   trump: gs.trump,
+                  selected: isSelected || hovering,
+                  highlighted: canDefend && !isSelected && !hovering,
                 ),
-              ),
-          ],
-        ),
-      ),
+                if (entry.defense != null)
+                  Positioned(
+                    top: 16,
+                    left: 16,
+                    child: CardWidget(
+                      card: entry.defense!,
+                      trump: gs.trump,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -506,17 +562,35 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
           for (int i = 0; i < gs.hand.length; i++)
             Padding(
               padding: const EdgeInsets.only(right: 8),
-              child: CardWidget(
-                card: gs.hand[i],
-                trump: gs.trump,
-                selected: _selectedHandIndices.contains(i),
-                onTap: () => setState(() {
-                  if (_selectedHandIndices.contains(i)) {
-                    _selectedHandIndices.remove(i);
-                  } else {
-                    _selectedHandIndices.add(i);
-                  }
-                }),
+              child: Draggable<int>(
+                data: i,
+                feedback: Material(
+                  color: Colors.transparent,
+                  child: Transform.scale(
+                    scale: 1.1,
+                    child: CardWidget(
+                      card: gs.hand[i],
+                      trump: gs.trump,
+                      selected: true,
+                    ),
+                  ),
+                ),
+                childWhenDragging: Opacity(
+                  opacity: 0.35,
+                  child: CardWidget(card: gs.hand[i], trump: gs.trump),
+                ),
+                child: CardWidget(
+                  card: gs.hand[i],
+                  trump: gs.trump,
+                  selected: _selectedHandIndices.contains(i),
+                  onTap: () => setState(() {
+                    if (_selectedHandIndices.contains(i)) {
+                      _selectedHandIndices.remove(i);
+                    } else {
+                      _selectedHandIndices.add(i);
+                    }
+                  }),
+                ),
               ),
             ),
         ],
