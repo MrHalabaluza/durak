@@ -27,10 +27,10 @@ class Room {
     // Their turn will stall until reconnection is implemented (future work).
   }
 
-  bool startGame() {
+  bool startGame([DeckConfig? config]) {
     if (isStarted || _connections.length < 2) return false;
     try {
-      _game = Game.start(playerIds);
+      _game = Game.start(playerIds, config: config);
     } on GameException catch (e) {
       for (final c in _connections) c.send(errorMsg(e.message));
       return false;

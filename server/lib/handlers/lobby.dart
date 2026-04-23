@@ -1,3 +1,4 @@
+import 'package:durak_logic/durak_logic.dart';
 import '../connection.dart';
 import '../protocol.dart';
 import '../room_manager.dart';
@@ -10,8 +11,8 @@ void handleLobby(Connection conn, ClientMessage msg) {
       _join(conn, roomId);
     case LeaveRoomMsg():
       _leave(conn);
-    case StartGameMsg():
-      _start(conn);
+    case StartGameMsg(:final deckConfig):
+      _start(conn, deckConfig);
     default:
   }
 }
@@ -56,13 +57,13 @@ void _leave(Connection conn) {
   }
 }
 
-void _start(Connection conn) {
+void _start(Connection conn, DeckConfig? deckConfig) {
   final room = conn.room;
   if (room == null) {
     conn.send(errorMsg('Not in a room'));
     return;
   }
-  if (!room.startGame()) {
+  if (!room.startGame(deckConfig)) {
     conn.send(errorMsg('Cannot start: need 2–6 players'));
   }
 }

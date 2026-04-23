@@ -12,7 +12,11 @@ sealed class ClientMessage {
       'create_room' => const CreateRoomMsg(),
       'join_room' => JoinRoomMsg(map['roomId'] as String),
       'leave_room' => const LeaveRoomMsg(),
-      'start_game' => const StartGameMsg(),
+      'start_game' => StartGameMsg(
+          map['deckConfig'] != null
+              ? _parseDeckConfig(map['deckConfig'] as List<dynamic>)
+              : null,
+        ),
       'attack' => AttackMsg(_parseCards(map['cards'] as List)),
       'defend' => DefendMsg(
           _parseCard(map['attackCard'] as Map<String, dynamic>),
@@ -42,7 +46,8 @@ class LeaveRoomMsg extends ClientMessage {
 }
 
 class StartGameMsg extends ClientMessage {
-  const StartGameMsg();
+  final DeckConfig? deckConfig;
+  StartGameMsg([this.deckConfig]);
 }
 
 class AttackMsg extends ClientMessage {
@@ -152,3 +157,13 @@ Card _parseCard(Map<String, dynamic> map) => Card(
 
 List<Card> _parseCards(List<dynamic> list) =>
     list.map((e) => _parseCard(e as Map<String, dynamic>)).toList();
+
+DeckConfig _parseDeckConfig(List<dynamic> list) {
+  final counts = <Card, int>{};
+  for (final entry in list) {
+    final map = entry as Map<String, dynamic>;
+    final count = map['count'] as int;
+    if (count > 0) counts[_parseCard(map)] = count;
+  }
+  return DeckConfig.custom(counts);
+}

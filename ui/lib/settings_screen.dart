@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart' hide Card;
 import 'package:flutter/services.dart';
 import 'package:durak_logic/durak_logic.dart';
+import 'app_settings.dart';
 
 class SettingsScreen extends StatefulWidget {
-  final DeckConfig initial;
+  final AppSettings initial;
   const SettingsScreen({super.key, required this.initial});
 
   @override
@@ -12,6 +13,8 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   late Map<Card, int> _counts;
+  late TextEditingController _hostCtrl;
+  late TextEditingController _portCtrl;
 
   static const _ranks = Rank.values;
   static const _suits = Suit.values;
@@ -31,7 +34,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() {
     super.initState();
-    _counts = Map<Card, int>.from(widget.initial.counts);
+    _counts = Map<Card, int>.from(widget.initial.deckConfig.counts);
+    _hostCtrl =
+        TextEditingController(text: widget.initial.serverHost);
+    _portCtrl =
+        TextEditingController(text: '${widget.initial.serverPort}');
+  }
+
+  @override
+  void dispose() {
+    _hostCtrl.dispose();
+    _portCtrl.dispose();
+    super.dispose();
   }
 
   int _count(Suit suit, Rank rank) => _counts[Card(suit, rank)] ?? 0;
@@ -45,6 +59,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _clear() => setState(() => _counts.clear());
+
+  AppSettings _buildSettings() {
+    final port = int.tryParse(_portCtrl.text) ?? 8080;
+    return AppSettings(
+      deckConfig: DeckConfig.custom(_counts),
+      serverHost: _hostCtrl.text.trim().isEmpty
+          ? 'localhost'
+          : _hostCtrl.text.trim(),
+      serverPort: port > 0 && port <= 65535 ? port : 8080,
+    );
+  }
 
   Future<void> _editCell(Suit suit, Rank rank) async {
     final card = Card(suit, rank);
@@ -98,13 +123,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Настройки колоды'),
+        title: const Text('Настройки'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(
-              context,
-              DeckConfig.custom(_counts),
-            ),
+            onPressed: () => Navigator.pop(context, _buildSettings()),
             child: const Text('Сохранить'),
           ),
         ],
@@ -112,9 +134,69 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Presets + total ───────────────────────────────────────────────
+          // ── Server settings ───────────────────────────────────────────────
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Text(
+              'Сервер',
+              style: Theme.of(context)
+                  .textTheme
+                  .titleMedium
+                  ?.copyWith(fontWeight: FontWeight.bold),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: TextField(
+                    controller: _hostCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Адрес сервера',
+                      hintText: 'localhost',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    keyboardType: TextInputType.url,
+                    autocorrect: false,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                SizedBox(
+                  width: 100,
+                  child: TextField(
+                    controller: _portCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Порт',
+                      hintText: '8080',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+
+          // ── Deck config ───────────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: Text(
+              'Колода',
+              style: Theme.of(context)
+                  .textTheme
+                  .titleMedium
+                  ?.copyWith(fontWeight: FontWeight.bold),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
             child: Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -198,7 +280,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         for (final suit in _suits)
           TableRow(
             children: [
-              // Suit label
               SizedBox(
                 height: cellH,
                 child: Center(
@@ -212,7 +293,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
               ),
-              // Count cells
               for (final rank in _ranks)
                 _CountCell(
                   count: _count(suit, rank),
