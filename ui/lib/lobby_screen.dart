@@ -95,16 +95,19 @@ class _LobbyScreenState extends State<LobbyScreen> {
   void _onMessage(Map<String, dynamic> map) {
     switch (map['type'] as String) {
       case 'room_joined':
-        setState(() {
-          _roomId = map['roomId'] as String;
-          _myPlayerId = map['playerId'] as String;
-        });
+        if (mounted) {
+          setState(() {
+            _roomId = map['roomId'] as String;
+            _myPlayerId = map['playerId'] as String;
+          });
+        }
       case 'room_state':
-        setState(() {
-          _roomId = map['roomId'] as String;
-          _players = List<String>.from(map['players'] as List);
-          if (map['started'] as bool) _gameStarted = true;
-        });
+        if (mounted) {
+          setState(() {
+            _roomId = map['roomId'] as String;
+            _players = List<String>.from(map['players'] as List);
+          });
+        }
       case 'game_state':
         if (!_gameStarted && mounted) {
           _gameStarted = true;
@@ -114,17 +117,25 @@ class _LobbyScreenState extends State<LobbyScreen> {
           // before the game screen subscribes.
           final socket = _socket!;
           _socket = null; // dispose() won't close a socket we handed off
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (_) => OnlineGameScreen(
-                socket: socket,
-                messageStream: _msgStream!,
-                myPlayerId: _myPlayerId!,
-                initialState: map,
+          final msgStream = _msgStream!;
+          final myPlayerId = _myPlayerId!;
+          // Defer navigation to the next frame so it never fires during a
+          // build phase, which would violate the _dependents.isEmpty
+          // invariant on InheritedElements.
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (_) => OnlineGameScreen(
+                  socket: socket,
+                  messageStream: msgStream,
+                  myPlayerId: myPlayerId,
+                  initialState: map,
+                ),
               ),
-            ),
-          );
+            );
+          });
         }
       case 'error':
         if (mounted) setState(() => _error = map['message'] as String);

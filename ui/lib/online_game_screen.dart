@@ -543,7 +543,8 @@ class _OnlineGameScreenState extends State<OnlineGameScreen> {
               onPressed: hasSel ? _addAttack : null,
               child: const Text('Подкинуть'),
             ),
-          if (_canAdd && phase == GamePhase.adding)
+          if (_canAdd &&
+              (phase == GamePhase.adding || phase == GamePhase.taking))
             OutlinedButton(
               onPressed: _pass,
               child: const Text('Пас'),
