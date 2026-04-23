@@ -143,8 +143,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen> {
 
   // ── WebSocket ─────────────────────────────────────────────────────────────
 
-  void _onData(dynamic data) {
-    final map = jsonDecode(data as String) as Map<String, dynamic>;
+  void _onData(Map<String, dynamic> map) {
     final type = map['type'] as String;
     if (type == 'game_state') {
       setState(() {
