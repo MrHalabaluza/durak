@@ -28,7 +28,8 @@ class LobbyScreen extends StatefulWidget {
 
 enum _Status { connecting, connected, error, disconnected }
 
-class _LobbyScreenState extends State<LobbyScreen> {
+class _LobbyScreenState extends State<LobbyScreen>
+    with WidgetsBindingObserver {
   WebSocket? _socket;
   Stream<Map<String, dynamic>>? _msgStream;
   StreamSubscription? _sub;
@@ -48,12 +49,20 @@ class _LobbyScreenState extends State<LobbyScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // Defer until after first build so setState / Navigator calls in _connect
     // don't fire before the widget tree is fully mounted (avoids
     // _dependents.isEmpty assertion from calling setState in initState).
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _connect();
     });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      setState(() {});
+    }
   }
 
   Future<void> _connect() async {
@@ -195,6 +204,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _sub?.cancel();
     _socket?.close();
     super.dispose();

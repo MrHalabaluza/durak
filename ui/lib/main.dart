@@ -77,42 +77,10 @@ class _SetupScreenState extends State<SetupScreen> {
   }
 
   Future<void> _joinRoom() async {
-    final ctrl = TextEditingController();
     final code = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Войти в комнату'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          decoration: const InputDecoration(
-            labelText: 'Код комнаты',
-            hintText: 'Введите код',
-          ),
-          textCapitalization: TextCapitalization.characters,
-          inputFormatters: [
-            FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9]')),
-            LengthLimitingTextInputFormatter(10),
-          ],
-          onSubmitted: (v) {
-            if (v.trim().isNotEmpty) Navigator.pop(ctx, v.trim());
-          },
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Отмена')),
-          FilledButton(
-            onPressed: () {
-              final v = ctrl.text.trim();
-              if (v.isNotEmpty) Navigator.pop(ctx, v);
-            },
-            child: const Text('Войти'),
-          ),
-        ],
-      ),
+      builder: (ctx) => const _JoinRoomDialog(),
     );
-    ctrl.dispose();
     if (code == null || !mounted) return;
     Navigator.push(
       context,
@@ -272,6 +240,59 @@ class _ServerInfoCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _JoinRoomDialog extends StatefulWidget {
+  const _JoinRoomDialog();
+
+  @override
+  State<_JoinRoomDialog> createState() => _JoinRoomDialogState();
+}
+
+class _JoinRoomDialogState extends State<_JoinRoomDialog> {
+  final _ctrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Войти в комнату'),
+      content: TextField(
+        controller: _ctrl,
+        autofocus: true,
+        decoration: const InputDecoration(
+          labelText: 'Код комнаты',
+          hintText: 'Введите код',
+        ),
+        textCapitalization: TextCapitalization.characters,
+        inputFormatters: [
+          FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9]')),
+          LengthLimitingTextInputFormatter(10),
+        ],
+        onSubmitted: (v) {
+          if (v.trim().isNotEmpty) Navigator.pop(context, v.trim());
+        },
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Отмена'),
+        ),
+        FilledButton(
+          onPressed: () {
+            final v = _ctrl.text.trim();
+            if (v.isNotEmpty) Navigator.pop(context, v);
+          },
+          child: const Text('Войти'),
+        ),
+      ],
     );
   }
 }

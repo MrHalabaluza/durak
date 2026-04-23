@@ -37,6 +37,7 @@ class _RemoteGS {
   final int discardSize;
   final int attackerIndex;
   final int defenderIndex;
+  final int currentAdderIndex;
   final List<String> addingPlayerIds;
   final List<Card> hand;
   final List<_RemotePlayer> players;
@@ -50,6 +51,7 @@ class _RemoteGS {
     required this.discardSize,
     required this.attackerIndex,
     required this.defenderIndex,
+    required this.currentAdderIndex,
     required this.addingPlayerIds,
     required this.hand,
     required this.players,
@@ -64,6 +66,7 @@ class _RemoteGS {
         discardSize: m['discardSize'] as int,
         attackerIndex: m['attackerIndex'] as int,
         defenderIndex: m['defenderIndex'] as int,
+        currentAdderIndex: m['currentAdderIndex'] as int,
         addingPlayerIds:
             List<String>.from(m['addingPlayerIds'] as List),
         hand: (m['hand'] as List)
@@ -116,7 +119,8 @@ class OnlineGameScreen extends StatefulWidget {
   State<OnlineGameScreen> createState() => _OnlineGameScreenState();
 }
 
-class _OnlineGameScreenState extends State<OnlineGameScreen> {
+class _OnlineGameScreenState extends State<OnlineGameScreen>
+    with WidgetsBindingObserver {
   StreamSubscription? _sub;
   _RemoteGS? _gs;
   String? _error;
@@ -127,6 +131,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     if (widget.initialState != null) {
       _gs = _RemoteGS.fromJson(widget.initialState!);
     }
@@ -136,9 +141,17 @@ class _OnlineGameScreenState extends State<OnlineGameScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _sub?.cancel();
     widget.socket.close();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      setState(() {});
+    }
   }
 
   // ── WebSocket ─────────────────────────────────────────────────────────────
@@ -179,6 +192,8 @@ class _OnlineGameScreenState extends State<OnlineGameScreen> {
       _gs!.players[_gs!.defenderIndex].id == widget.myPlayerId;
   bool get _canAdd =>
       _gs!.addingPlayerIds.contains(widget.myPlayerId);
+  bool get _isTokenHolder =>
+      _gs!.players[_gs!.currentAdderIndex].id == widget.myPlayerId;
 
   // ── Actions ───────────────────────────────────────────────────────────────
 
@@ -337,31 +352,41 @@ class _OnlineGameScreenState extends State<OnlineGameScreen> {
     );
   }
 
+  /// Index of the player who must act next (place a card or pass).
+  int _currentActorIndex(_RemoteGS gs) => switch (gs.phase) {
+        GamePhase.attacking => gs.attackerIndex,
+        GamePhase.defending => gs.defenderIndex,
+        _ => gs.currentAdderIndex,
+      };
+
   Widget _buildPlayerChip(_RemoteGS gs, int i) {
     final p = gs.players[i];
     final isMe = p.id == widget.myPlayerId;
-    final isAttacker = i == gs.attackerIndex;
+    final isAdder = gs.addingPlayerIds.contains(p.id);
     final isDefender = i == gs.defenderIndex;
+    final isActor = i == _currentActorIndex(gs);
 
-    final chipColor = isAttacker
-        ? Colors.orange.withAlpha(50)
-        : isDefender
-            ? Colors.lightBlue.withAlpha(50)
-            : null;
+    final bgColor = isDefender
+        ? Colors.lightBlue.withAlpha(50)
+        : isAdder
+            ? Colors.orange.withAlpha(50)
+            : Colors.grey.withAlpha(20);
+
+    final borderColor = isActor
+        ? (isDefender ? Colors.lightBlue : Colors.orange)
+        : isMe
+            ? Theme.of(context).colorScheme.primary
+            : Colors.grey.shade700;
+    final borderWidth = isActor ? 2.5 : (isMe ? 2.0 : 1.0);
 
     return Padding(
       padding: const EdgeInsets.only(right: 8),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: chipColor ?? Colors.grey.withAlpha(20),
+          color: bgColor,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isMe
-                ? Theme.of(context).colorScheme.primary
-                : Colors.grey.shade700,
-            width: isMe ? 2 : 1,
-          ),
+          border: Border.all(color: borderColor, width: borderWidth),
         ),
         child: p.hasLeft
             ? const Icon(Icons.exit_to_app, size: 16, color: Colors.grey)
@@ -382,16 +407,16 @@ class _OnlineGameScreenState extends State<OnlineGameScreen> {
                   const SizedBox(width: 2),
                   Text('${p.handSize}',
                       style: const TextStyle(fontSize: 13)),
-                  if (isAttacker || isDefender) ...[
+                  if (isAdder || isDefender) ...[
                     const SizedBox(width: 6),
                     Text(
-                      isAttacker ? 'АТК' : 'ЗЩТ',
+                      isDefender ? 'ЗЩТ' : 'АТК',
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.bold,
-                        color: isAttacker
-                            ? Colors.orange
-                            : Colors.lightBlue,
+                        color: isDefender
+                            ? Colors.lightBlue
+                            : Colors.orange,
                       ),
                     ),
                   ],
@@ -512,43 +537,53 @@ class _OnlineGameScreenState extends State<OnlineGameScreen> {
         spacing: 8,
         runSpacing: 8,
         children: [
-          if (_imAttacker && phase == GamePhase.attacking)
+          if (phase == GamePhase.attacking)
             FilledButton(
-              onPressed: hasSel ? _attack : null,
+              onPressed: _imAttacker && hasSel ? _attack : null,
               child: const Text('Атаковать'),
             ),
-          if (_imDefender && phase == GamePhase.defending) ...[
+          if (phase == GamePhase.defending) ...[
             FilledButton(
-              onPressed: hasTarget && hasSingle ? _defend : null,
+              onPressed: _imDefender && hasTarget && hasSingle ? _defend : null,
               child: const Text('Отбить'),
             ),
             OutlinedButton(
-              onPressed: hasSel ? _transfer : null,
+              onPressed: _imDefender && hasSel ? _transfer : null,
               child: const Text('Перевести'),
             ),
             OutlinedButton(
-              onPressed: hasSingle ? _transit : null,
+              onPressed: _imDefender && hasSingle ? _transit : null,
               child: const Text('Проездной'),
             ),
-          ],
-          if (_imDefender &&
-              (phase == GamePhase.defending || phase == GamePhase.adding))
             OutlinedButton(
-              onPressed: _take,
+              onPressed: _imDefender ? _take : null,
               child: const Text('Взять'),
             ),
-          if (_canAdd &&
-              (phase == GamePhase.adding || phase == GamePhase.taking))
+          ],
+          if (phase == GamePhase.adding) ...[
             FilledButton(
-              onPressed: hasSel ? _addAttack : null,
+              onPressed: _canAdd && hasSel ? _addAttack : null,
               child: const Text('Подкинуть'),
             ),
-          if (_canAdd &&
-              (phase == GamePhase.adding || phase == GamePhase.taking))
             OutlinedButton(
-              onPressed: _pass,
+              onPressed: _imDefender ? _take : null,
+              child: const Text('Взять'),
+            ),
+            OutlinedButton(
+              onPressed: _isTokenHolder ? _pass : null,
               child: const Text('Пас'),
             ),
+          ],
+          if (phase == GamePhase.taking) ...[
+            FilledButton(
+              onPressed: _canAdd && hasSel ? _addAttack : null,
+              child: const Text('Подкинуть'),
+            ),
+            OutlinedButton(
+              onPressed: _isTokenHolder ? _pass : null,
+              child: const Text('Пас'),
+            ),
+          ],
         ],
       ),
     );
