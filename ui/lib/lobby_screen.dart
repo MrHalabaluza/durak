@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:durak_logic/durak_logic.dart' hide Card;
 import 'app_settings.dart';
+import 'online_game_screen.dart';
 import 'settings_screen.dart';
 
 class LobbyScreen extends StatefulWidget {
@@ -94,7 +95,23 @@ class _LobbyScreenState extends State<LobbyScreen> {
           if (map['started'] as bool) _gameStarted = true;
         });
       case 'game_state':
-        if (!_gameStarted && mounted) setState(() => _gameStarted = true);
+        if (!_gameStarted && mounted) {
+          _gameStarted = true;
+          _sub?.cancel();
+          _sub = null;
+          final socket = _socket!;
+          _socket = null; // prevent dispose() from closing the handed-off socket
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (_) => OnlineGameScreen(
+                socket: socket,
+                myPlayerId: _myPlayerId!,
+                initialState: map,
+              ),
+            ),
+          );
+        }
       case 'error':
         if (mounted) setState(() => _error = map['message'] as String);
     }
@@ -236,20 +253,6 @@ class _LobbyScreenState extends State<LobbyScreen> {
   }
 
   Widget _buildLobby() {
-    if (_gameStarted) {
-      return const Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.check_circle_outline, size: 64, color: Colors.green),
-            SizedBox(height: 16),
-            Text('Игра началась!',
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-          ],
-        ),
-      );
-    }
-
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
