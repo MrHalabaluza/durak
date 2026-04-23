@@ -93,7 +93,12 @@ class _RemoteGS {
 // ── Widget ────────────────────────────────────────────────────────────────────
 
 class OnlineGameScreen extends StatefulWidget {
+  /// Used only for sending messages to the server.
   final WebSocket socket;
+
+  /// Broadcast stream of parsed server messages — created in LobbyScreen.
+  final Stream<Map<String, dynamic>> messageStream;
+
   final String myPlayerId;
 
   /// First game_state received in the lobby — displayed immediately.
@@ -102,6 +107,7 @@ class OnlineGameScreen extends StatefulWidget {
   const OnlineGameScreen({
     super.key,
     required this.socket,
+    required this.messageStream,
     required this.myPlayerId,
     this.initialState,
   });
@@ -124,7 +130,8 @@ class _OnlineGameScreenState extends State<OnlineGameScreen> {
     if (widget.initialState != null) {
       _gs = _RemoteGS.fromJson(widget.initialState!);
     }
-    _sub = widget.socket.listen(_onData, onDone: _onDone, onError: _onError);
+    _sub = widget.messageStream
+        .listen(_onData, onDone: _onDone, onError: _onError);
   }
 
   @override

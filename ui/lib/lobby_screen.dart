@@ -30,6 +30,7 @@ enum _Status { connecting, connected, error, disconnected }
 
 class _LobbyScreenState extends State<LobbyScreen> {
   WebSocket? _socket;
+  Stream<Map<String, dynamic>>? _msgStream;
   StreamSubscription? _sub;
 
   _Status _status = _Status.connecting;
@@ -62,11 +63,17 @@ class _LobbyScreenState extends State<LobbyScreen> {
         ws.close();
         return;
       }
+      // Convert to broadcast so OnlineGameScreen can subscribe without
+      // "Stream has already been listened to" error.
+      final stream = ws
+          .map((data) => jsonDecode(data as String) as Map<String, dynamic>)
+          .asBroadcastStream();
       setState(() {
         _socket = ws;
+        _msgStream = stream;
         _status = _Status.connected;
       });
-      _sub = ws.listen(_onData, onDone: _onDone, onError: _onError);
+      _sub = stream.listen(_onMessage, onDone: _onDone, onError: _onError);
       _send(_isCreator
           ? {'type': 'create_room'}
           : {'type': 'join_room', 'roomId': widget.joinRoomId});
@@ -80,8 +87,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
     }
   }
 
-  void _onData(dynamic data) {
-    final map = jsonDecode(data as String) as Map<String, dynamic>;
+  void _onMessage(Map<String, dynamic> map) {
     switch (map['type'] as String) {
       case 'room_joined':
         setState(() {
@@ -97,15 +103,18 @@ class _LobbyScreenState extends State<LobbyScreen> {
       case 'game_state':
         if (!_gameStarted && mounted) {
           _gameStarted = true;
-          _sub?.cancel();
-          _sub = null;
+          // Don't cancel _sub here — let dispose() do it after
+          // OnlineGameScreen.initState() has already subscribed to the
+          // broadcast stream. Cancelling here would kill the source
+          // before the game screen subscribes.
           final socket = _socket!;
-          _socket = null; // prevent dispose() from closing the handed-off socket
+          _socket = null; // dispose() won't close a socket we handed off
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
               builder: (_) => OnlineGameScreen(
                 socket: socket,
+                messageStream: _msgStream!,
                 myPlayerId: _myPlayerId!,
                 initialState: map,
               ),
