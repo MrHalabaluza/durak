@@ -48,7 +48,12 @@ class _LobbyScreenState extends State<LobbyScreen> {
   @override
   void initState() {
     super.initState();
-    _connect();
+    // Defer until after first build so setState / Navigator calls in _connect
+    // don't fire before the widget tree is fully mounted (avoids
+    // _dependents.isEmpty assertion from calling setState in initState).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _connect();
+    });
   }
 
   Future<void> _connect() async {
