@@ -83,6 +83,7 @@ class _SetupScreenState extends State<SetupScreen> {
         builder: (_) => LobbyScreen(
           host: _settings.serverHost,
           port: _settings.serverPort,
+          tls: _settings.serverTls,
         ),
       ),
     );
@@ -100,6 +101,7 @@ class _SetupScreenState extends State<SetupScreen> {
         builder: (_) => LobbyScreen(
           host: _settings.serverHost,
           port: _settings.serverPort,
+          tls: _settings.serverTls,
           joinRoomId: code,
         ),
       ),

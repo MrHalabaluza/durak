@@ -11,6 +11,7 @@ import 'settings_screen.dart';
 class LobbyScreen extends StatefulWidget {
   final String host;
   final int port;
+  final bool tls;
 
   /// null — создать комнату, иначе — ID комнаты для входа
   final String? joinRoomId;
@@ -19,6 +20,7 @@ class LobbyScreen extends StatefulWidget {
     super.key,
     required this.host,
     required this.port,
+    this.tls = false,
     this.joinRoomId,
   });
 
@@ -71,8 +73,9 @@ class _LobbyScreenState extends State<LobbyScreen>
       _error = null;
     });
     try {
+      final scheme = widget.tls ? 'wss' : 'ws';
       final ws =
-          await WebSocket.connect('ws://${widget.host}:${widget.port}');
+          await WebSocket.connect('$scheme://${widget.host}:${widget.port}');
       if (!mounted) {
         ws.close();
         return;
@@ -187,6 +190,7 @@ class _LobbyScreenState extends State<LobbyScreen>
             deckConfig: _deckConfig,
             serverHost: widget.host,
             serverPort: widget.port,
+            serverTls: widget.tls,
           ),
         ),
       ),

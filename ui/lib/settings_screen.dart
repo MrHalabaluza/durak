@@ -16,6 +16,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late TextEditingController _hostCtrl;
   late TextEditingController _portCtrl;
   late TextEditingController _nameCtrl;
+  late bool _tls;
 
   static const _ranks = Rank.values;
   static const _suits = Suit.values;
@@ -39,6 +40,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _hostCtrl = TextEditingController(text: widget.initial.serverHost);
     _portCtrl = TextEditingController(text: '${widget.initial.serverPort}');
     _nameCtrl = TextEditingController(text: widget.initial.playerName);
+    _tls = widget.initial.serverTls;
   }
 
   @override
@@ -69,6 +71,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ? 'localhost'
           : _hostCtrl.text.trim(),
       serverPort: port > 0 && port <= 65535 ? port : 8080,
+      serverTls: _tls,
       playerName: _nameCtrl.text.trim(),
     );
   }
@@ -175,7 +178,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -209,6 +212,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
               ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 0, 16, 12),
+            child: SwitchListTile(
+              dense: true,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+              title: const Text('TLS (wss://)'),
+              value: _tls,
+              onChanged: (v) => setState(() => _tls = v),
             ),
           ),
           const Divider(height: 1),

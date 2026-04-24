@@ -6,10 +6,12 @@ class AppSettings {
   final DeckConfig deckConfig;
   final String serverHost;
   final int serverPort;
+  final bool serverTls;
   final String playerName;
 
   static const _keyHost = 'server_host';
   static const _keyPort = 'server_port';
+  static const _keyTls = 'server_tls';
   static const _keyDeck = 'deck_config';
   static const _keyName = 'player_name';
 
@@ -17,6 +19,7 @@ class AppSettings {
     DeckConfig? deckConfig,
     this.serverHost = 'localhost',
     this.serverPort = 8080,
+    this.serverTls = false,
     this.playerName = '',
   }) : deckConfig = deckConfig ?? DeckConfig();
 
@@ -24,12 +27,14 @@ class AppSettings {
     DeckConfig? deckConfig,
     String? serverHost,
     int? serverPort,
+    bool? serverTls,
     String? playerName,
   }) =>
       AppSettings(
         deckConfig: deckConfig ?? this.deckConfig,
         serverHost: serverHost ?? this.serverHost,
         serverPort: serverPort ?? this.serverPort,
+        serverTls: serverTls ?? this.serverTls,
         playerName: playerName ?? this.playerName,
       );
 
@@ -37,6 +42,7 @@ class AppSettings {
     final prefs = await SharedPreferences.getInstance();
     final host = prefs.getString(_keyHost) ?? 'localhost';
     final port = prefs.getInt(_keyPort) ?? 8080;
+    final tls = prefs.getBool(_keyTls) ?? false;
     final name = prefs.getString(_keyName) ?? '';
     final deckJson = prefs.getString(_keyDeck);
 
@@ -64,6 +70,7 @@ class AppSettings {
       deckConfig: deck,
       serverHost: host,
       serverPort: port,
+      serverTls: tls,
       playerName: name,
     );
   }
@@ -72,6 +79,7 @@ class AppSettings {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyHost, serverHost);
     await prefs.setInt(_keyPort, serverPort);
+    await prefs.setBool(_keyTls, serverTls);
     await prefs.setString(_keyName, playerName);
     final deckEntries = deckConfig.counts.entries
         .where((e) => e.value > 0)
