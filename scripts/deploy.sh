@@ -12,11 +12,11 @@ fi
 : "${REMOTE_DIR:=~/durak}"
 : "${PORT:=8080}"
 
-echo "→ Syncing logic/ and server/ to $REMOTE_HOST:$REMOTE_DIR ..."
-rsync -az --delete \
+echo "→ Syncing logic/ and server/ to $REMOTE_HOST:$SSH_PORT:$REMOTE_DIR ..."
+rsync -e "ssh -p $SSH_PORT" -az --delete \
   --exclude='.git' --exclude='.dart_tool' --exclude='build' \
   "$ROOT/logic/"  "$REMOTE_HOST:$REMOTE_DIR/logic/"
-rsync -az --delete \
+rsync -e "ssh -p $SSH_PORT" -az --delete \
   --exclude='.git' --exclude='.dart_tool' --exclude='build' \
   "$ROOT/server/" "$REMOTE_HOST:$REMOTE_DIR/server/"
 
@@ -26,7 +26,7 @@ ssh -p "$SSH_PORT" "$REMOTE_HOST" bash <<EOF
   cd "$REMOTE_DIR"
   docker build -f server/Dockerfile -t durak-server .
   docker rm -f durak-server 2>/dev/null || true
-  docker run -d --restart=unless-stopped -p $PORT:8080 --name durak-server durak-server
+  docker run -d --restart=unless-stopped -p 127.0.0.1:$PORT:8080 --name durak-server durak-server
   echo "Container started, accessible on port $PORT"
 EOF
 
