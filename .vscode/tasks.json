@@ -1,0 +1,39 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "pub get: logic",
+      "type": "shell",
+      "command": "dart pub get",
+      "options": { "cwd": "${workspaceFolder}/logic" },
+      "presentation": { "reveal": "silent", "panel": "shared" }
+    },
+    {
+      "label": "pub get: server",
+      "type": "shell",
+      "command": "dart pub get",
+      "options": { "cwd": "${workspaceFolder}/server" },
+      "presentation": { "reveal": "silent", "panel": "shared" }
+    },
+    {
+      "label": "pub get: ui",
+      "type": "shell",
+      "command": "flutter pub get",
+      "options": { "cwd": "${workspaceFolder}/ui" },
+      "presentation": { "reveal": "silent", "panel": "shared" }
+    },
+    {
+      "label": "pub get: all",
+      "dependsOn": ["pub get: logic", "pub get: server", "pub get: ui"],
+      "dependsOrder": "parallel",
+      "group": { "kind": "build", "isDefault": true },
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "deploy: remote",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/deploy.sh",
+      "presentation": { "reveal": "always", "panel": "dedicated", "focus": true }
+    }
+  ]
+}

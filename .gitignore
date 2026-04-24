@@ -8,10 +8,12 @@
 
 # IDE
 .idea/
-.vscode/
 *.iml
 *.ipr
 *.iws
+
+# Machine-specific
+.env
 
 # OS
 .DS_Store

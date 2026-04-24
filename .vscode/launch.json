@@ -1,0 +1,77 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    // ── Server ──────────────────────────────────────────────────────────────
+    {
+      "name": "Server: Launch (local)",
+      "type": "dart",
+      "request": "launch",
+      "program": "${workspaceFolder}/server/bin/server.dart",
+      "cwd": "${workspaceFolder}/server",
+      "envFile": "${workspaceFolder}/.env",
+      "vmAdditionalArgs": ["--enable-vm-service=8181"]
+    },
+    {
+      // Attach to a running server (local or remote).
+      // For remote: ssh -L 8181:localhost:8181 $REMOTE_HOST, then run this config.
+      "name": "Server: Attach",
+      "type": "dart",
+      "request": "attach",
+      "vmServiceUri": "http://localhost:8181"
+    },
+    // ── Flutter web clients ─────────────────────────────────────────────────
+    {
+      "name": "Client 1 (web :7001)",
+      "type": "dart",
+      "request": "launch",
+      "program": "${workspaceFolder}/ui/lib/main.dart",
+      "cwd": "${workspaceFolder}/ui",
+      "flutterMode": "debug",
+      "deviceId": "chrome",
+      "args": ["--web-port", "7001"]
+    },
+    {
+      "name": "Client 2 (web :7002)",
+      "type": "dart",
+      "request": "launch",
+      "program": "${workspaceFolder}/ui/lib/main.dart",
+      "cwd": "${workspaceFolder}/ui",
+      "flutterMode": "debug",
+      "deviceId": "chrome",
+      "args": ["--web-port", "7002"]
+    },
+    {
+      "name": "Client 3 (web :7003)",
+      "type": "dart",
+      "request": "launch",
+      "program": "${workspaceFolder}/ui/lib/main.dart",
+      "cwd": "${workspaceFolder}/ui",
+      "flutterMode": "debug",
+      "deviceId": "chrome",
+      "args": ["--web-port", "7003"]
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Dev: Server + 1 Client",
+      "configurations": ["Server: Launch (local)", "Client 1 (web :7001)"]
+    },
+    {
+      "name": "Dev: Server + 2 Clients",
+      "configurations": [
+        "Server: Launch (local)",
+        "Client 1 (web :7001)",
+        "Client 2 (web :7002)"
+      ]
+    },
+    {
+      "name": "Dev: Server + 3 Clients",
+      "configurations": [
+        "Server: Launch (local)",
+        "Client 1 (web :7001)",
+        "Client 2 (web :7002)",
+        "Client 3 (web :7003)"
+      ]
+    }
+  ]
+}
