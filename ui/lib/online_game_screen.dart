@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/material.dart' hide Card;
+import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:durak_logic/durak_logic.dart';
 import 'card_widget.dart';
 
@@ -97,7 +97,7 @@ class _RemoteGS {
 
 class OnlineGameScreen extends StatefulWidget {
   /// Used only for sending messages to the server.
-  final WebSocket socket;
+  final WebSocketChannel socket;
 
   /// Broadcast stream of parsed server messages — created in LobbyScreen.
   final Stream<Map<String, dynamic>> messageStream;
@@ -143,7 +143,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _sub?.cancel();
-    widget.socket.close();
+    widget.socket.sink.close();
     super.dispose();
   }
 
@@ -179,7 +179,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
   }
 
   void _send(Map<String, dynamic> msg) =>
-      widget.socket.add(jsonEncode(msg));
+      widget.socket.sink.add(jsonEncode(msg));
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 

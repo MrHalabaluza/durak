@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:flutter/services.dart';
 import 'package:durak_logic/durak_logic.dart' hide Card;
 import 'app_settings.dart';
@@ -32,7 +32,7 @@ enum _Status { connecting, connected, error, disconnected }
 
 class _LobbyScreenState extends State<LobbyScreen>
     with WidgetsBindingObserver {
-  WebSocket? _socket;
+  WebSocketChannel? _socket;
   Stream<Map<String, dynamic>>? _msgStream;
   StreamSubscription? _sub;
 
@@ -74,15 +74,16 @@ class _LobbyScreenState extends State<LobbyScreen>
     });
     try {
       final scheme = widget.tls ? 'wss' : 'ws';
-      final ws =
-          await WebSocket.connect('$scheme://${widget.host}:${widget.port}');
+      final ws = WebSocketChannel.connect(
+          Uri.parse('$scheme://${widget.host}:${widget.port}'));
+      await ws.ready;
       if (!mounted) {
-        ws.close();
+        ws.sink.close();
         return;
       }
       // Convert to broadcast so OnlineGameScreen can subscribe without
       // "Stream has already been listened to" error.
-      final stream = ws
+      final stream = ws.stream
           .map((data) => jsonDecode(data as String) as Map<String, dynamic>)
           .asBroadcastStream();
       setState(() {
@@ -168,7 +169,7 @@ class _LobbyScreenState extends State<LobbyScreen>
   }
 
   void _send(Map<String, dynamic> msg) =>
-      _socket?.add(jsonEncode(msg));
+      _socket?.sink.add(jsonEncode(msg));
 
   void _startGame() {
     final config = _deckConfig.counts.entries
@@ -202,7 +203,7 @@ class _LobbyScreenState extends State<LobbyScreen>
 
   void _leave() {
     _send({'type': 'leave_room'});
-    _socket?.close();
+    _socket?.sink.close();
     if (mounted) Navigator.pop(context);
   }
 
@@ -210,7 +211,7 @@ class _LobbyScreenState extends State<LobbyScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _sub?.cancel();
-    _socket?.close();
+    _socket?.sink.close();
     super.dispose();
   }
 
@@ -220,7 +221,9 @@ class _LobbyScreenState extends State<LobbyScreen>
   Widget build(BuildContext context) {
     return PopScope(
       canPop: false,
-      onPopInvokedWithResult: (didPop, _) => _leave(),
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _leave();
+      },
       child: Scaffold(
         appBar: AppBar(
           title:
