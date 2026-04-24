@@ -1,0 +1,18 @@
+# Dart/Flutter generated
+.dart_tool/
+.pub-cache/
+.pub/
+/build/
+**/doc/api/
+.flutter-plugins-dependencies
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+
+# OS
+.DS_Store
+*.swp
