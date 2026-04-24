@@ -73,5 +73,21 @@
         "Client 3 (web :7003)"
       ]
     }
+    ,
+    {
+      "name": "Dev: 2 Local Clients",
+      "configurations": [
+        "Client 1 (web :7001)",
+        "Client 2 (web :7002)"
+      ]
+    },
+    {
+      "name": "Dev: 3 Local Clients",
+      "configurations": [
+        "Client 1 (web :7001)",
+        "Client 2 (web :7002)",
+        "Client 3 (web :7003)"
+      ]
+    }
   ]
 }
