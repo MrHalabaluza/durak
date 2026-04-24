@@ -133,7 +133,7 @@ class Game {
       state.table.addAttack(c);
     }
     state.passedPlayers.clear();
-    state.transitUsedThisTurn.clear();
+    //state.transitUsedThisTurn.clear();
     state.currentAdderIndex = state.attackerIndex;
     state.phase = GamePhase.defending;
   }
@@ -214,7 +214,7 @@ class Game {
     state.defenderIndex = nextDefIdx;
     state.currentAdderIndex = state.attackerIndex;
     state.passedPlayers.clear();
-    state.transitUsedThisTurn.clear();
+    //state.transitUsedThisTurn.clear();
   }
 
   /// Defender shows a trump card matching the uncovered attack rank to transfer

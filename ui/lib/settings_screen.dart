@@ -1,7 +1,12 @@
+import 'dart:math';
 import 'package:flutter/material.dart' hide Card;
 import 'package:flutter/services.dart';
 import 'package:durak_logic/durak_logic.dart';
 import 'app_settings.dart';
+
+enum _CardRange { six, two }
+
+enum _DeckType { standard, random }
 
 class SettingsScreen extends StatefulWidget {
   final AppSettings initial;
@@ -16,7 +21,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late TextEditingController _hostCtrl;
   late TextEditingController _portCtrl;
   late TextEditingController _nameCtrl;
+  late TextEditingController _randomCountCtrl;
   late bool _tls;
+  late _CardRange _cardRange;
+  late _DeckType _deckType;
 
   static const _ranks = Rank.values;
   static const _suits = Suit.values;
@@ -33,14 +41,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
     Colors.lightBlueAccent,
   ];
 
+  Rank get _minRank => _cardRange == _CardRange.two ? Rank.two : Rank.six;
+
   @override
   void initState() {
     super.initState();
-    _counts = Map<Card, int>.from(widget.initial.deckConfig.counts);
+    final initial = widget.initial.deckConfig;
+    _counts = Map<Card, int>.from(initial.counts);
     _hostCtrl = TextEditingController(text: widget.initial.serverHost);
     _portCtrl = TextEditingController(text: '${widget.initial.serverPort}');
     _nameCtrl = TextEditingController(text: widget.initial.playerName);
     _tls = widget.initial.serverTls;
+
+    final hasLowRanks =
+        _counts.keys.any((c) => c.rank.index < Rank.six.index);
+    _cardRange = hasLowRanks ? _CardRange.two : _CardRange.six;
+
+    final std = DeckConfig.preset(_minRank).counts;
+    final isStandard = _counts.length == std.length &&
+        _counts.entries.every((e) => std[e.key] == e.value);
+    _deckType = isStandard ? _DeckType.standard : _DeckType.random;
+
+    _randomCountCtrl =
+        TextEditingController(text: '${initial.cardCount}');
   }
 
   @override
@@ -48,6 +71,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _hostCtrl.dispose();
     _portCtrl.dispose();
     _nameCtrl.dispose();
+    _randomCountCtrl.dispose();
     super.dispose();
   }
 
@@ -55,13 +79,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   int get _total => _counts.values.fold(0, (a, b) => a + b);
 
-  void _setPreset(Rank minRank) {
+  void _setRange(_CardRange range) {
     setState(() {
-      _counts = Map<Card, int>.from(DeckConfig.preset(minRank).counts);
+      _cardRange = range;
+      if (_deckType == _DeckType.standard) {
+        _counts = Map.from(DeckConfig.preset(_minRank).counts);
+      } else {
+        final n = int.tryParse(_randomCountCtrl.text) ?? _total;
+        _applyRandom(n > 0 ? n : 36);
+      }
     });
   }
 
-  void _clear() => setState(() => _counts.clear());
+  void _setDeckType(_DeckType type) {
+    setState(() {
+      _deckType = type;
+      if (type == _DeckType.standard) {
+        _counts = Map.from(DeckConfig.preset(_minRank).counts);
+      }
+    });
+  }
+
+  void _applyRandom(int count) {
+    _counts = Map.from(DeckConfig.random(_minRank, count, Random()).counts);
+  }
+
+  void _generateRandom() {
+    final n = int.tryParse(_randomCountCtrl.text) ?? 0;
+    if (n <= 0) return;
+    setState(() => _applyRandom(n));
+  }
 
   AppSettings _buildSettings() {
     final port = int.tryParse(_portCtrl.text) ?? 8080;
@@ -121,6 +168,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       } else {
         _counts[card] = result;
       }
+      _deckType = _DeckType.random;
     });
   }
 
@@ -228,7 +276,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           // ── Deck config ───────────────────────────────────────────────────
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
             child: Text(
               'Колода',
               style: Theme.of(context)
@@ -238,27 +286,63 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                const Text('Пресеты:',
-                    style: TextStyle(fontWeight: FontWeight.bold)),
-                _presetChip('36 карт (6–Т)', () => _setPreset(Rank.six)),
-                _presetChip('28 карт (8–Т)', () => _setPreset(Rank.eight)),
-                _presetChip('52 карты (2–Т)', () => _setPreset(Rank.two)),
-                _presetChip('Очистить', _clear,
-                    color: Colors.red.shade700),
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: SegmentedButton<_CardRange>(
+              segments: const [
+                ButtonSegment(value: _CardRange.six, label: Text('6–Т')),
+                ButtonSegment(value: _CardRange.two, label: Text('2–Т')),
               ],
+              selected: {_cardRange},
+              onSelectionChanged: (s) => _setRange(s.first),
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: SegmentedButton<_DeckType>(
+              segments: const [
+                ButtonSegment(
+                    value: _DeckType.standard, label: Text('Стандартная')),
+                ButtonSegment(
+                    value: _DeckType.random, label: Text('Проёб-колода')),
+              ],
+              selected: {_deckType},
+              onSelectionChanged: (s) => _setDeckType(s.first),
+            ),
+          ),
+          if (_deckType == _DeckType.random)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 120,
+                    child: TextField(
+                      controller: _randomCountCtrl,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly
+                      ],
+                      decoration: const InputDecoration(
+                        labelText: 'Карт в колоде',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  FilledButton.icon(
+                    onPressed: _generateRandom,
+                    icon: const Icon(Icons.shuffle),
+                    label: const Text('Сгенерировать'),
+                  ),
+                ],
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
             child: Text(
               'Карт в колоде: $_total',
-              style: const TextStyle(fontSize: 16, color: Colors.grey),
+              style: const TextStyle(fontSize: 14, color: Colors.grey),
             ),
           ),
           const Divider(height: 1),
@@ -286,14 +370,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _presetChip(String label, VoidCallback onTap, {Color? color}) {
-    return ActionChip(
-      label: Text(label),
-      backgroundColor: color,
-      onPressed: onTap,
-    );
-  }
-
   Widget _buildGrid() {
     const cellW = 48.0;
     const cellH = 48.0;
@@ -303,7 +379,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       defaultColumnWidth: const FixedColumnWidth(cellW),
       columnWidths: const {0: FixedColumnWidth(headerW)},
       children: [
-        // ── Rank header row ──────────────────────────────────────────────
         TableRow(
           children: [
             const SizedBox(height: cellH),
@@ -318,7 +393,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
           ],
         ),
-        // ── One row per suit ─────────────────────────────────────────────
         for (final suit in _suits)
           TableRow(
             children: [

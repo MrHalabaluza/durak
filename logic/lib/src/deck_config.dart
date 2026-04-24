@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'card.dart';
 
 class DeckConfig {
@@ -35,6 +36,24 @@ class DeckConfig {
   factory DeckConfig.custom(Map<Card, int> counts) {
     final m = Map<Card, int>.from(counts)
       ..removeWhere((_, v) => v <= 0);
+    return DeckConfig._(m);
+  }
+
+  /// Random deck: [totalCount] cards drawn uniformly (with replacement) from
+  /// the pool of all cards with rank >= [minRank]. Each draw is independent,
+  /// so some cards may appear multiple times and others not at all.
+  factory DeckConfig.random(Rank minRank, int totalCount, Random rng) {
+    if (totalCount <= 0) return DeckConfig._(const {});
+    final pool = [
+      for (final suit in Suit.values)
+        for (final rank in Rank.values)
+          if (rank.index >= minRank.index) Card(suit, rank),
+    ];
+    final m = <Card, int>{};
+    for (var i = 0; i < totalCount; i++) {
+      final card = pool[rng.nextInt(pool.length)];
+      m[card] = (m[card] ?? 0) + 1;
+    }
     return DeckConfig._(m);
   }
 
