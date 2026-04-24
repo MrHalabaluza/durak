@@ -267,8 +267,8 @@ class Game {
     state.defenderIndex = nextDefIdx;
     state.currentAdderIndex = state.attackerIndex;
     state.passedPlayers.clear();
-    // Clear transit tracking for the new defender.
-    state.transitUsedThisTurn.clear();
+    // transitUsedThisTurn intentionally NOT cleared here — tracking persists
+    // for the whole transit chain so no card can be reused within one turn.
   }
 
   /// Player with the token adds cards whose rank is already on the table.
