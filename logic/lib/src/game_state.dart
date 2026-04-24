@@ -41,9 +41,8 @@ class GameState {
   /// Null = draw (no loser); set when [phase] == [GamePhase.finished].
   String? loserId;
 
-  /// Tracks how many times each card has been used as transit this turn.
-  /// Each copy of a card may be used as transit once per turn.
-  final Map<Card, int> transitUsedThisTurn;
+  /// IDs of cards that have been used as transit this turn.
+  final Set<int> transitUsedThisTurn;
 
   GameState({
     required this.players,
@@ -55,7 +54,7 @@ class GameState {
   })  : discard = [],
         table = TableState(),
         passedPlayers = {},
-        transitUsedThisTurn = {},
+        transitUsedThisTurn = <int>{},
         currentAdderIndex = attackerIndex,
         isFirstTurn = true;
 

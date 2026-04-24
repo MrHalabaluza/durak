@@ -12,7 +12,7 @@ class Deck {
     final deck = Deck._();
     for (final entry in cfg.counts.entries) {
       for (var i = 0; i < entry.value; i++) {
-        deck._cards.add(entry.key);
+        deck._cards.add(Card(entry.key.suit, entry.key.rank));
       }
     }
     return deck;

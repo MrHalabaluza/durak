@@ -244,13 +244,11 @@ class Game {
       'Transit card rank must match the uncovered attack rank',
     );
 
-    // Each physical copy may be used as transit once per turn.
-    final usedCount = state.transitUsedThisTurn[card] ?? 0;
-    final availableCount = player.hand.where((c) => c == card).length;
-    _require(
-      usedCount < availableCount,
-      'This card has already been used for transit this turn',
-    );
+    // Find the specific card instance in hand that hasn't been used as transit.
+    final actualCard = player.hand
+        .where((c) => c == card && !state.transitUsedThisTurn.contains(c.id))
+        .firstOrNull;
+    _require(actualCard != null, 'This card has already been used for transit this turn');
 
     final nextDefIdx = state.nextActiveIndex(state.defenderIndex);
     final uncoveredCount =
@@ -260,15 +258,13 @@ class Game {
       'Next player does not have enough cards to defend',
     );
 
-    state.transitUsedThisTurn[card] = usedCount + 1;
+    state.transitUsedThisTurn.add(actualCard!.id);
 
     // Former defender becomes new attacker; next player becomes defender.
     state.attackerIndex = state.defenderIndex;
     state.defenderIndex = nextDefIdx;
     state.currentAdderIndex = state.attackerIndex;
     state.passedPlayers.clear();
-    // transitUsedThisTurn intentionally NOT cleared here — tracking persists
-    // for the whole transit chain so no card can be reused within one turn.
   }
 
   /// Player with the token adds cards whose rank is already on the table.

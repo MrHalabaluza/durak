@@ -3,10 +3,13 @@ enum Suit { diamonds, hearts, clubs, spades }
 enum Rank { two, three, four, five, six, seven, eight, nine, ten, jack, queen, king, ace }
 
 class Card {
+  static int _nextId = 0;
+
+  final int id;
   final Suit suit;
   final Rank rank;
 
-  const Card(this.suit, this.rank);
+  Card(this.suit, this.rank) : id = _nextId++;
 
   /// Returns true if this card beats [other] given [trump] suit.
   bool beats(Card other, Suit trump) {
