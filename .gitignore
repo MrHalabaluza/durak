@@ -14,6 +14,7 @@
 
 # Machine-specific
 .env
+.chrome-profiles/
 
 # OS
 .DS_Store
