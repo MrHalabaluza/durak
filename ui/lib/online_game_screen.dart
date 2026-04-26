@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart' hide Card;
+import 'package:flutter/services.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:durak_logic/durak_logic.dart';
 import 'card_widget.dart';
@@ -74,8 +75,7 @@ class _RemoteGS {
         attackerIndex: m['attackerIndex'] as int,
         defenderIndex: m['defenderIndex'] as int,
         currentAdderIndex: m['currentAdderIndex'] as int,
-        addingPlayerIds:
-            List<String>.from(m['addingPlayerIds'] as List),
+        addingPlayerIds: List<String>.from(m['addingPlayerIds'] as List),
         hand: (m['hand'] as List)
             .map((e) => _parseCard(e as Map<String, dynamic>))
             .toList(),
@@ -140,6 +140,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     if (widget.initialState != null) {
       _gs = _RemoteGS.fromJson(widget.initialState!);
     }
@@ -150,6 +151,11 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
     _sub?.cancel();
     widget.socket.sink.close();
     super.dispose();
@@ -199,10 +205,15 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
       _gs!.players[_gs!.attackerIndex].id == widget.myPlayerId;
   bool get _imDefender =>
       _gs!.players[_gs!.defenderIndex].id == widget.myPlayerId;
-  bool get _canAdd =>
-      _gs!.addingPlayerIds.contains(widget.myPlayerId);
+  bool get _canAdd => _gs!.addingPlayerIds.contains(widget.myPlayerId);
   bool get _isTokenHolder =>
       _gs!.players[_gs!.currentAdderIndex].id == widget.myPlayerId;
+
+  int _currentActorIndex(_RemoteGS gs) => switch (gs.phase) {
+        GamePhase.attacking => gs.attackerIndex,
+        GamePhase.defending => gs.defenderIndex,
+        _ => gs.currentAdderIndex,
+      };
 
   // ── Actions ───────────────────────────────────────────────────────────────
 
@@ -253,9 +264,10 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
   void _attackByDrag(_RemoteGS gs, int displayId) {
     final dragged = _cardByDisplayId(gs, displayId);
     if (dragged == null) return;
-    final cards = _selectedCardIds.contains(displayId) && _selectedCardIds.isNotEmpty
-        ? _selectedCards
-        : [dragged];
+    final cards =
+        _selectedCardIds.contains(displayId) && _selectedCardIds.isNotEmpty
+            ? _selectedCards
+            : [dragged];
     final isAdding =
         gs.phase == GamePhase.adding || gs.phase == GamePhase.taking;
     _doAction({
@@ -277,16 +289,17 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
   void _transferByDrag(_RemoteGS gs, int displayId) {
     final dragged = _cardByDisplayId(gs, displayId);
     if (dragged == null) return;
-    final cards = _selectedCardIds.contains(displayId) && _selectedCardIds.isNotEmpty
-        ? _selectedCards
-        : [dragged];
+    final cards =
+        _selectedCardIds.contains(displayId) && _selectedCardIds.isNotEmpty
+            ? _selectedCards
+            : [dragged];
     _doAction({
       'type': 'transfer',
       'cards': cards.map(_serCard).toList(),
     });
   }
 
-  // ── Build ─────────────────────────────────────────────────────────────────
+  // ── Layout constants ──────────────────────────────────────────────────────
 
   static const _suitSymbol = {
     Suit.diamonds: '♦',
@@ -308,44 +321,196 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     GamePhase.finished: 'Конец',
   };
 
+  static const double _cw = 42.0;
+  static const double _ch = _cw * kCardHeight / kCardWidth;
+  static const double _handHeight = 116.0;
+
+  // ── Seat positions ────────────────────────────────────────────────────────
+
+  /// Returns [count-1] alignment positions for opponents (seatIndex 1..count-1).
+  /// seatIndex 0 is always the local player at the bottom.
+  static List<Alignment> _seatPositions(int count) => switch (count) {
+        2 => const [Alignment(0.0, -0.7)],
+        3 => const [Alignment(-0.55, -0.7), Alignment(0.55, -0.7)],
+        4 => const [
+            Alignment(-0.88, 0.0),
+            Alignment(0.0, -0.7),
+            Alignment(0.88, 0.0),
+          ],
+        5 => const [
+            Alignment(-0.88, 0.0),
+            Alignment(-0.5, -0.7),
+            Alignment(0.5, -0.7),
+            Alignment(0.88, 0.0),
+          ],
+        6 => const [
+            Alignment(-0.88, 0.0),
+            Alignment(-0.6, -0.7),
+            Alignment(0.0, -0.7),
+            Alignment(0.6, -0.7),
+            Alignment(0.88, 0.0),
+          ],
+        _ => const [],
+      };
+
+  // ── Build ─────────────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
     final gs = _gs;
     if (gs == null) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Игра')),
-        body: const Center(child: CircularProgressIndicator()),
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
       );
     }
     if (gs.phase == GamePhase.finished) return _buildGameOver(gs);
 
     return Scaffold(
-      appBar: AppBar(
-        automaticallyImplyLeading: false,
-        title: Row(
+      body: SafeArea(
+        child: Column(
           children: [
-            Text(
-              _suitSymbol[gs.trump]!,
-              style: TextStyle(fontSize: 22, color: _suitColor[gs.trump]),
-            ),
-            const SizedBox(width: 8),
-            Text(_phaseLabel[gs.phase]!,
-                style: const TextStyle(fontSize: 16)),
+            if (_error != null) _buildErrorBanner(),
+            Expanded(child: _buildGameArea(gs)),
+            _buildActionsBar(gs),
+            SizedBox(height: _handHeight, child: _buildHand(gs)),
           ],
         ),
       ),
-      body: Column(
+    );
+  }
+
+  // ── Game area (circular layout) ───────────────────────────────────────────
+
+  Widget _buildGameArea(_RemoteGS gs) {
+    final myIndex = gs.players.indexWhere((p) => p.id == widget.myPlayerId);
+    final count = gs.players.length;
+    final positions = _seatPositions(count);
+
+    return Stack(
+      children: [
+        // Table fills center; top padding leaves room for seats and corners
+        Positioned.fill(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 76, 8, 8),
+            child: _buildTable(gs),
+          ),
+        ),
+        // Trump + phase label at top center
+        Positioned(
+          top: 4,
+          left: 0,
+          right: 0,
+          child: _buildInfoBar(gs),
+        ),
+        // Deck corner — top-left
+        if (gs.deckSize > 0)
+          Positioned(left: 8, top: 30, child: _buildDeckCorner(gs)),
+        // Discard corner — top-right
+        if (gs.discardSize > 0)
+          Positioned(right: 8, top: 30, child: _buildDiscardCorner(gs)),
+        // Opponent seats arranged around the circle
+        for (int si = 1; si < count; si++)
+          Align(
+            alignment: positions[si - 1],
+            child: _buildPlayerSeat(gs, (myIndex + si) % count),
+          ),
+        // FAB in bottom-right of game area
+        Positioned(
+          right: 8,
+          bottom: 8,
+          child: _buildFab(gs) ?? const SizedBox.shrink(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildInfoBar(_RemoteGS gs) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Text(
+          _suitSymbol[gs.trump]!,
+          style: TextStyle(
+            fontSize: 18,
+            color: _suitColor[gs.trump],
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          _phaseLabel[gs.phase]!,
+          style: const TextStyle(fontSize: 13, color: Colors.white70),
+        ),
+      ],
+    );
+  }
+
+  // ── PlayerSeat ────────────────────────────────────────────────────────────
+
+  Widget _buildPlayerSeat(_RemoteGS gs, int playerIndex) {
+    final p = gs.players[playerIndex];
+    final isActor = playerIndex == _currentActorIndex(gs);
+    final isDefender = playerIndex == gs.defenderIndex;
+
+    final borderColor = isActor
+        ? (isDefender ? Colors.lightBlue : Colors.orange)
+        : Colors.grey.shade700;
+    final borderWidth = isActor ? 2.5 : 1.0;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+      constraints: const BoxConstraints(maxWidth: 84),
+      decoration: BoxDecoration(
+        color: Colors.black54,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: borderColor, width: borderWidth),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          if (_error != null) _buildErrorBanner(),
-          _buildPlayersRow(gs),
-          const Divider(height: 1),
-          _buildCornersRow(gs),
-          const Divider(height: 1),
-          Expanded(child: _buildTable(gs)),
-          const Divider(height: 1),
-          _buildHand(gs),
-          const Divider(height: 1),
-          _buildActions(gs),
+          _buildCardFan(p.handSize),
+          const SizedBox(height: 3),
+          Text(
+            p.hasLeft ? '—' : (p.nickname.isEmpty ? '?' : p.nickname),
+            style: const TextStyle(fontSize: 10, color: Colors.white70),
+            overflow: TextOverflow.ellipsis,
+            maxLines: 1,
+          ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.style, size: 9, color: Colors.grey),
+              const SizedBox(width: 2),
+              Text(
+                '${p.handSize}',
+                style: const TextStyle(fontSize: 10, color: Colors.grey),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCardFan(int count) {
+    final shown = count.clamp(0, 7);
+    if (shown == 0) return const SizedBox(width: 50, height: 34);
+    const cardW = 24.0;
+    const step = 7.0;
+    return SizedBox(
+      width: cardW + (shown - 1) * step,
+      height: 36,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          for (int i = 0; i < shown; i++)
+            Positioned(
+              left: i * step,
+              child: Transform.rotate(
+                angle: (i - (shown - 1) / 2) * 0.12,
+                child: CardWidget(faceUp: false, width: cardW),
+              ),
+            ),
         ],
       ),
     );
@@ -353,29 +518,11 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
 
   // ── Deck / discard corners ────────────────────────────────────────────────
 
-  static const double _cw = 42.0;
-  static const double _ch = _cw * kCardHeight / kCardWidth;
-
-  Widget _buildCornersRow(_RemoteGS gs) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      child: Row(
-        children: [
-          if (gs.deckSize > 0) _buildDeckCorner(gs),
-          const Spacer(),
-          if (gs.discardSize > 0) _buildDiscardCorner(gs),
-        ],
-      ),
-    );
-  }
-
   Widget _buildDeckCorner(_RemoteGS gs) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        // Deck card with trump peeking out to the right (Clip.none, so trump
-        // protrudes into the Spacer without shifting layout).
         SizedBox(
           width: _cw,
           height: _ch,
@@ -399,9 +546,11 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
             ],
           ),
         ),
-        const SizedBox(width: 6),
-        Text('${gs.deckSize}',
-            style: const TextStyle(color: Colors.grey, fontSize: 13)),
+        const SizedBox(width: 5),
+        Text(
+          '${gs.deckSize}',
+          style: const TextStyle(color: Colors.grey, fontSize: 12),
+        ),
       ],
     );
   }
@@ -411,9 +560,11 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Text('${gs.discardSize}',
-            style: const TextStyle(color: Colors.grey, fontSize: 13)),
-        const SizedBox(width: 6),
+        Text(
+          '${gs.discardSize}',
+          style: const TextStyle(color: Colors.grey, fontSize: 12),
+        ),
+        const SizedBox(width: 5),
         Transform.rotate(
           angle: 0.12,
           child: const CardWidget(faceUp: false, width: _cw),
@@ -421,6 +572,8 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
       ],
     );
   }
+
+  // ── Error banner ──────────────────────────────────────────────────────────
 
   Widget _buildErrorBanner() {
     return Material(
@@ -447,92 +600,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     );
   }
 
-  Widget _buildPlayersRow(_RemoteGS gs) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: Row(
-        children: [
-          for (int i = 0; i < gs.players.length; i++)
-            _buildPlayerChip(gs, i),
-        ],
-      ),
-    );
-  }
-
-  /// Index of the player who must act next (place a card or pass).
-  int _currentActorIndex(_RemoteGS gs) => switch (gs.phase) {
-        GamePhase.attacking => gs.attackerIndex,
-        GamePhase.defending => gs.defenderIndex,
-        _ => gs.currentAdderIndex,
-      };
-
-  Widget _buildPlayerChip(_RemoteGS gs, int i) {
-    final p = gs.players[i];
-    final isMe = p.id == widget.myPlayerId;
-    final isAdder = gs.addingPlayerIds.contains(p.id);
-    final isDefender = i == gs.defenderIndex;
-    final isActor = i == _currentActorIndex(gs);
-
-    final bgColor = isDefender
-        ? Colors.lightBlue.withAlpha(50)
-        : isAdder
-            ? Colors.orange.withAlpha(50)
-            : Colors.grey.withAlpha(20);
-
-    final borderColor = isActor
-        ? (isDefender ? Colors.lightBlue : Colors.orange)
-        : isMe
-            ? Theme.of(context).colorScheme.primary
-            : Colors.grey.shade700;
-    final borderWidth = isActor ? 2.5 : 1.0;
-
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: bgColor,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: borderColor, width: borderWidth),
-        ),
-        child: p.hasLeft
-            ? const Icon(Icons.exit_to_app, size: 16, color: Colors.grey)
-            : Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    p.nickname.isEmpty ? '${i + 1}' : p.nickname,
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: isMe
-                          ? Theme.of(context).colorScheme.primary
-                          : null,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  const Icon(Icons.style, size: 13, color: Colors.grey),
-                  const SizedBox(width: 2),
-                  Text('${p.handSize}',
-                      style: const TextStyle(fontSize: 13)),
-                  if (isAdder || isDefender) ...[
-                    const SizedBox(width: 6),
-                    Text(
-                      isDefender ? 'ЗЩТ' : 'АТК',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: isDefender
-                            ? Colors.lightBlue
-                            : Colors.orange,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-      ),
-    );
-  }
+  // ── Table ─────────────────────────────────────────────────────────────────
 
   Widget _buildTable(_RemoteGS gs) {
     final isTransferDrop = _imDefender && gs.phase == GamePhase.defending;
@@ -553,7 +621,8 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
           duration: const Duration(milliseconds: 120),
           decoration: hovering
               ? BoxDecoration(
-                  border: Border.all(color: hoverColor.withAlpha(160), width: 2),
+                  border:
+                      Border.all(color: hoverColor.withAlpha(160), width: 2),
                   borderRadius: BorderRadius.circular(8),
                 )
               : null,
@@ -570,10 +639,10 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
                   ),
                 )
               : SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(12),
                   child: Wrap(
-                    spacing: 16,
-                    runSpacing: 16,
+                    spacing: 12,
+                    runSpacing: 12,
                     children:
                         gs.table.map((e) => _buildTableEntry(e, gs)).toList(),
                   ),
@@ -622,24 +691,23 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     );
   }
 
+  // ── Hand ──────────────────────────────────────────────────────────────────
+
   Widget _buildHand(_RemoteGS gs) {
     if (gs.hand.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.all(16),
-        child: Center(
-          child: Text('Нет карт', style: TextStyle(color: Colors.grey)),
-        ),
+      return const Center(
+        child: Text('Нет карт', style: TextStyle(color: Colors.grey)),
       );
     }
     final sorted = sortHand(gs.hand, gs.trump);
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       child: Row(
         children: [
           for (final card in sorted)
             Padding(
-              padding: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsets.only(right: 6),
               child: Draggable<int>(
                 data: cardDisplayId(card),
                 feedback: Material(
@@ -672,7 +740,9 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     );
   }
 
-  Widget _buildActions(_RemoteGS gs) {
+  // ── Actions bar ───────────────────────────────────────────────────────────
+
+  Widget _buildActionsBar(_RemoteGS gs) {
     final sel = _selectedCards;
     final hasSel = sel.isNotEmpty;
     final hasSingle = sel.length == 1;
@@ -680,10 +750,10 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     final phase = gs.phase;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+      padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
       child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
+        spacing: 6,
+        runSpacing: 6,
         children: [
           if (phase == GamePhase.attacking)
             FilledButton(
@@ -703,39 +773,44 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
               onPressed: _imDefender && hasSingle ? _transit : null,
               child: const Text('Проездной'),
             ),
-            OutlinedButton(
-              onPressed: _imDefender ? _take : null,
-              child: const Text('Взять'),
-            ),
           ],
-          if (phase == GamePhase.adding) ...[
+          if (phase == GamePhase.adding || phase == GamePhase.taking)
             FilledButton(
               onPressed: _canAdd && hasSel ? _addAttack : null,
               child: const Text('Подкинуть'),
             ),
-            OutlinedButton(
-              onPressed: _imDefender ? _take : null,
-              child: const Text('Взять'),
-            ),
-            OutlinedButton(
-              onPressed: _isTokenHolder ? _pass : null,
-              child: const Text('Пас'),
-            ),
-          ],
-          if (phase == GamePhase.taking) ...[
-            FilledButton(
-              onPressed: _canAdd && hasSel ? _addAttack : null,
-              child: const Text('Подкинуть'),
-            ),
-            OutlinedButton(
-              onPressed: _isTokenHolder ? _pass : null,
-              child: const Text('Пас'),
-            ),
-          ],
         ],
       ),
     );
   }
+
+  // ── FAB: Take / Pass ──────────────────────────────────────────────────────
+
+  Widget? _buildFab(_RemoteGS gs) {
+    final phase = gs.phase;
+    if (_imDefender &&
+        (phase == GamePhase.defending || phase == GamePhase.adding)) {
+      return FloatingActionButton.extended(
+        heroTag: 'take_fab',
+        onPressed: _take,
+        label: const Text('Взять'),
+        icon: const Icon(Icons.download_rounded, size: 18),
+        backgroundColor: Colors.red.shade700,
+      );
+    }
+    if (_isTokenHolder &&
+        (phase == GamePhase.adding || phase == GamePhase.taking)) {
+      return FloatingActionButton.extended(
+        heroTag: 'pass_fab',
+        onPressed: _pass,
+        label: const Text('Пас'),
+        icon: const Icon(Icons.skip_next_rounded, size: 18),
+      );
+    }
+    return null;
+  }
+
+  // ── Game over ─────────────────────────────────────────────────────────────
 
   Widget _buildGameOver(_RemoteGS gs) {
     final loserId = gs.loserId;
@@ -773,8 +848,8 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
                   : isLoser
                       ? 'Вы проиграли'
                       : 'Вы победили!',
-              style: const TextStyle(
-                  fontSize: 28, fontWeight: FontWeight.bold),
+              style:
+                  const TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
             ),
             if (!isDraw && loserIdx >= 0) ...[
               const SizedBox(height: 8),
