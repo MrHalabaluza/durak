@@ -27,12 +27,8 @@
       "program": "${workspaceFolder}/ui/lib/main.dart",
       "cwd": "${workspaceFolder}/ui",
       "flutterMode": "debug",
-      "deviceId": "chrome",
-      "args": [
-        "--web-port",
-        "7001",
-        "--web-browser-flag=--user-data-dir=${workspaceFolder}/.chrome-profiles/dev"
-      ]
+      "deviceId": "web-server",
+      "args": ["--web-port", "7001"]
     },
     {
       "name": "Client 2 (web :7002)",
@@ -41,12 +37,8 @@
       "program": "${workspaceFolder}/ui/lib/main.dart",
       "cwd": "${workspaceFolder}/ui",
       "flutterMode": "debug",
-      "deviceId": "chrome",
-      "args": [
-        "--web-port",
-        "7002",
-        "--web-browser-flag=--user-data-dir=${workspaceFolder}/.chrome-profiles/dev"
-      ]
+      "deviceId": "web-server",
+      "args": ["--web-port", "7002"]
     },
     {
       "name": "Client 3 (web :7003)",
@@ -55,12 +47,8 @@
       "program": "${workspaceFolder}/ui/lib/main.dart",
       "cwd": "${workspaceFolder}/ui",
       "flutterMode": "debug",
-      "deviceId": "chrome",
-      "args": [
-        "--web-port",
-        "7003",
-        "--web-browser-flag=--user-data-dir=${workspaceFolder}/.chrome-profiles/dev"
-      ]
+      "deviceId": "web-server",
+      "args": ["--web-port", "7003"]
     }
   ],
   "compounds": [
