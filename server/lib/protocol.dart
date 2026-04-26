@@ -9,8 +9,9 @@ sealed class ClientMessage {
   static ClientMessage parse(String raw) {
     final map = jsonDecode(raw) as Map<String, dynamic>;
     return switch (map['type'] as String) {
-      'create_room' => const CreateRoomMsg(),
-      'join_room' => JoinRoomMsg(map['roomId'] as String),
+      'create_room' => CreateRoomMsg(map['nickname'] as String? ?? ''),
+      'join_room' => JoinRoomMsg(
+          map['roomId'] as String, map['nickname'] as String? ?? ''),
       'leave_room' => const LeaveRoomMsg(),
       'start_game' => StartGameMsg(
           map['deckConfig'] != null
@@ -33,12 +34,14 @@ sealed class ClientMessage {
 }
 
 class CreateRoomMsg extends ClientMessage {
-  const CreateRoomMsg();
+  final String nickname;
+  const CreateRoomMsg(this.nickname);
 }
 
 class JoinRoomMsg extends ClientMessage {
   final String roomId;
-  const JoinRoomMsg(this.roomId);
+  final String nickname;
+  const JoinRoomMsg(this.roomId, this.nickname);
 }
 
 class LeaveRoomMsg extends ClientMessage {
@@ -97,13 +100,15 @@ Map<String, dynamic> roomJoinedMsg(String roomId, String playerId) => {
 
 Map<String, dynamic> roomStateMsg(
   String roomId,
-  List<String> playerIds,
+  List<({String id, String nickname})> players,
   bool started,
 ) =>
     {
       'type': 'room_state',
       'roomId': roomId,
-      'players': playerIds,
+      'players': players
+          .map((p) => {'id': p.id, 'nickname': p.nickname})
+          .toList(),
       'started': started,
     };
 
@@ -111,6 +116,7 @@ Map<String, dynamic> gameStateMsg(
   GameState state,
   String playerId,
   Set<String> addingPlayerIds,
+  Map<String, String> nicknames,
 ) {
   final player = state.players.firstWhere(
     (p) => p.id == playerId,
@@ -131,6 +137,7 @@ Map<String, dynamic> gameStateMsg(
     'players': state.players
         .map((p) => {
               'id': p.id,
+              'nickname': nicknames[p.id] ?? p.id,
               'handSize': p.handSize,
               'hasLeft': p.hasLeft,
             })
@@ -141,6 +148,9 @@ Map<String, dynamic> gameStateMsg(
               'defense': e.defense != null ? _serializeCard(e.defense!) : null,
             })
         .toList(),
+    'trumpCard': state.trumpCard != null
+        ? _serializeCard(state.trumpCard!)
+        : null,
     'loserId': state.loserId,
   };
 }

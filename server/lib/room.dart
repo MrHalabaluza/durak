@@ -12,6 +12,8 @@ class Room {
   bool get isStarted => _game != null;
   bool get isEmpty => _connections.isEmpty;
   List<String> get playerIds => _connections.map((c) => c.playerId).toList();
+  List<({String id, String nickname})> get playerEntries =>
+      _connections.map((c) => (id: c.playerId, nickname: c.nickname)).toList();
 
   bool addPlayer(Connection conn) {
     if (isStarted || _connections.length >= 6) return false;
@@ -78,8 +80,9 @@ class Room {
   void _broadcastGameState() {
     final state = _game!.state;
     final addingIds = _game!.addingPlayerIds;
+    final nicks = {for (final c in _connections) c.playerId: c.nickname};
     for (final conn in _connections) {
-      conn.send(gameStateMsg(state, conn.playerId, addingIds));
+      conn.send(gameStateMsg(state, conn.playerId, addingIds, nicks));
     }
     if (state.phase == GamePhase.finished) {
       broadcast({'type': 'game_over', 'loserId': state.loserId});

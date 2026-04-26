@@ -50,7 +50,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _counts = Map<Card, int>.from(initial.counts);
     _hostCtrl = TextEditingController(text: widget.initial.serverHost);
     _portCtrl = TextEditingController(text: '${widget.initial.serverPort}');
-    _nameCtrl = TextEditingController(text: widget.initial.playerName);
+    _nameCtrl = TextEditingController(text: widget.initial.playerName)
+      ..addListener(() => setState(() {}));
     _tls = widget.initial.serverTls;
 
     final hasLowRanks =
@@ -112,6 +113,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   AppSettings _buildSettings() {
     final port = int.tryParse(_portCtrl.text) ?? 8080;
+    final name = _nameCtrl.text.trim();
     return AppSettings(
       deckConfig: DeckConfig.custom(_counts),
       serverHost: _hostCtrl.text.trim().isEmpty
@@ -119,9 +121,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
           : _hostCtrl.text.trim(),
       serverPort: port > 0 && port <= 65535 ? port : 8080,
       serverTls: _tls,
-      playerName: _nameCtrl.text.trim(),
+      playerName: name.isEmpty ? widget.initial.playerName : name,
     );
   }
+
+  bool get _canSave => _nameCtrl.text.trim().isNotEmpty;
 
   Future<void> _editCell(Suit suit, Rank rank) async {
     final card = Card(suit, rank);
@@ -179,7 +183,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         title: const Text('Настройки'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, _buildSettings()),
+            onPressed:
+                _canSave ? () => Navigator.pop(context, _buildSettings()) : null,
             child: const Text('Сохранить'),
           ),
         ],

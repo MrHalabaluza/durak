@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'app_settings.dart';
-import 'game_screen.dart';
 import 'lobby_screen.dart';
 import 'settings_screen.dart';
 
@@ -29,8 +28,6 @@ class DurakApp extends StatelessWidget {
   }
 }
 
-enum _GameMode { local, online }
-
 class SetupScreen extends StatefulWidget {
   const SetupScreen({super.key});
 
@@ -39,9 +36,7 @@ class SetupScreen extends StatefulWidget {
 }
 
 class _SetupScreenState extends State<SetupScreen> {
-  int _playerCount = 2;
   AppSettings _settings = AppSettings();
-  _GameMode _mode = _GameMode.local;
 
   @override
   void initState() {
@@ -64,18 +59,6 @@ class _SetupScreenState extends State<SetupScreen> {
     }
   }
 
-  void _startLocal() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => GameScreen(
-          playerCount: _playerCount,
-          deckConfig: _settings.deckConfig,
-        ),
-      ),
-    );
-  }
-
   void _createRoom() {
     Navigator.push(
       context,
@@ -84,6 +67,7 @@ class _SetupScreenState extends State<SetupScreen> {
           host: _settings.serverHost,
           port: _settings.serverPort,
           tls: _settings.serverTls,
+          playerName: _settings.playerName,
         ),
       ),
     );
@@ -103,6 +87,7 @@ class _SetupScreenState extends State<SetupScreen> {
           port: _settings.serverPort,
           tls: _settings.serverTls,
           joinRoomId: code,
+          playerName: _settings.playerName,
         ),
       ),
     );
@@ -112,7 +97,7 @@ class _SetupScreenState extends State<SetupScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('DTFool — Двойной переводной дурак'),
+        title: const Text('DTFool'),
         actions: [
           IconButton(
             icon: const Icon(Icons.settings),
@@ -130,84 +115,65 @@ class _SetupScreenState extends State<SetupScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Mode toggle
-                SegmentedButton<_GameMode>(
-                  segments: const [
-                    ButtonSegment(
-                      value: _GameMode.local,
-                      icon: Icon(Icons.people),
-                      label: Text('Локальная игра'),
-                    ),
-                    ButtonSegment(
-                      value: _GameMode.online,
-                      icon: Icon(Icons.wifi),
-                      label: Text('Онлайн'),
-                    ),
-                  ],
-                  selected: {_mode},
-                  onSelectionChanged: (s) =>
-                      setState(() => _mode = s.first),
+                _PlayerNameCard(
+                  name: _settings.playerName,
+                  onEdit: _openSettings,
+                ),
+                const SizedBox(height: 16),
+                _ServerInfoCard(
+                  host: _settings.serverHost,
+                  port: _settings.serverPort,
+                  onEdit: _openSettings,
                 ),
                 const SizedBox(height: 32),
-
-                if (_mode == _GameMode.local) ...[
-                  const Text('Количество игроков',
-                      style: TextStyle(fontSize: 18),
-                      textAlign: TextAlign.center),
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.remove),
-                        onPressed: _playerCount > 2
-                            ? () => setState(() => _playerCount--)
-                            : null,
-                      ),
-                      Text('$_playerCount',
-                          style: const TextStyle(fontSize: 36)),
-                      IconButton(
-                        icon: const Icon(Icons.add),
-                        onPressed: _playerCount < 6
-                            ? () => setState(() => _playerCount++)
-                            : null,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Колода: ${_settings.deckConfig.cardCount} карт',
-                    style: const TextStyle(color: Colors.grey),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 32),
-                  FilledButton(
-                    onPressed: _startLocal,
-                    child: const Text('Начать игру'),
-                  ),
-                ] else ...[
-                  // Online mode — server info
-                  _ServerInfoCard(
-                    host: _settings.serverHost,
-                    port: _settings.serverPort,
-                    onEdit: _openSettings,
-                  ),
-                  const SizedBox(height: 24),
-                  FilledButton.icon(
-                    onPressed: _createRoom,
-                    icon: const Icon(Icons.add),
-                    label: const Text('Создать комнату'),
-                  ),
-                  const SizedBox(height: 12),
-                  OutlinedButton.icon(
-                    onPressed: _joinRoom,
-                    icon: const Icon(Icons.login),
-                    label: const Text('Войти по коду'),
-                  ),
-                ],
+                FilledButton.icon(
+                  onPressed: _createRoom,
+                  icon: const Icon(Icons.add),
+                  label: const Text('Создать комнату'),
+                ),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: _joinRoom,
+                  icon: const Icon(Icons.login),
+                  label: const Text('Войти по коду'),
+                ),
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PlayerNameCard extends StatelessWidget {
+  final String name;
+  final VoidCallback onEdit;
+
+  const _PlayerNameCard({required this.name, required this.onEdit});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            const Icon(Icons.person_outline, color: Colors.grey),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Никнейм',
+                      style: TextStyle(color: Colors.grey, fontSize: 11)),
+                  Text(name.isEmpty ? '—' : name,
+                      style: const TextStyle(fontSize: 15)),
+                ],
+              ),
+            ),
+            TextButton(onPressed: onEdit, child: const Text('Изменить')),
+          ],
         ),
       ),
     );
@@ -240,17 +206,12 @@ class _ServerInfoCard extends StatelessWidget {
                 children: [
                   const Text('Сервер',
                       style: TextStyle(color: Colors.grey, fontSize: 11)),
-                  Text(
-                    '$host:$port',
-                    style: const TextStyle(fontSize: 15),
-                  ),
+                  Text('$host:$port',
+                      style: const TextStyle(fontSize: 15)),
                 ],
               ),
             ),
-            TextButton(
-              onPressed: onEdit,
-              child: const Text('Изменить'),
-            ),
+            TextButton(onPressed: onEdit, child: const Text('Изменить')),
           ],
         ),
       ),

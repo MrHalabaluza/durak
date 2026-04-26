@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:durak_logic/durak_logic.dart';
 
@@ -43,7 +44,11 @@ class AppSettings {
     final host = prefs.getString(_keyHost) ?? 'localhost';
     final port = prefs.getInt(_keyPort) ?? 8080;
     final tls = prefs.getBool(_keyTls) ?? false;
-    final name = prefs.getString(_keyName) ?? '';
+    var name = prefs.getString(_keyName) ?? '';
+    if (name.isEmpty) {
+      name = 'Player_${100 + Random().nextInt(900)}';
+      await prefs.setString(_keyName, name);
+    }
     final deckJson = prefs.getString(_keyDeck);
 
     DeckConfig deck;

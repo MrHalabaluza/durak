@@ -20,9 +20,10 @@ Map<String, String> _serCard(Card c) =>
 
 class _RemotePlayer {
   final String id;
+  final String nickname;
   final int handSize;
   final bool hasLeft;
-  const _RemotePlayer(this.id, this.handSize, this.hasLeft);
+  const _RemotePlayer(this.id, this.nickname, this.handSize, this.hasLeft);
 }
 
 class _RemoteEntry {
@@ -34,6 +35,7 @@ class _RemoteEntry {
 class _RemoteGS {
   final GamePhase phase;
   final Suit trump;
+  final Card? trumpCard;
   final int deckSize;
   final int discardSize;
   final int attackerIndex;
@@ -48,6 +50,7 @@ class _RemoteGS {
   const _RemoteGS({
     required this.phase,
     required this.trump,
+    this.trumpCard,
     required this.deckSize,
     required this.discardSize,
     required this.attackerIndex,
@@ -63,6 +66,9 @@ class _RemoteGS {
   factory _RemoteGS.fromJson(Map<String, dynamic> m) => _RemoteGS(
         phase: GamePhase.values.byName(m['phase'] as String),
         trump: Suit.values.byName(m['trump'] as String),
+        trumpCard: m['trumpCard'] != null
+            ? _parseCard(m['trumpCard'] as Map<String, dynamic>)
+            : null,
         deckSize: m['deckSize'] as int,
         discardSize: m['discardSize'] as int,
         attackerIndex: m['attackerIndex'] as int,
@@ -77,6 +83,7 @@ class _RemoteGS {
           final p = e as Map<String, dynamic>;
           return _RemotePlayer(
             p['id'] as String,
+            p['nickname'] as String? ?? '',
             p['handSize'] as int,
             p['hasLeft'] as bool,
           );
@@ -326,24 +333,13 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
                 style: const TextStyle(fontSize: 16)),
           ],
         ),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Row(
-              children: [
-                const Icon(Icons.style, size: 16, color: Colors.grey),
-                const SizedBox(width: 4),
-                Text('${gs.deckSize}',
-                    style: const TextStyle(color: Colors.grey)),
-              ],
-            ),
-          ),
-        ],
       ),
       body: Column(
         children: [
           if (_error != null) _buildErrorBanner(),
           _buildPlayersRow(gs),
+          const Divider(height: 1),
+          _buildCornersRow(gs),
           const Divider(height: 1),
           Expanded(child: _buildTable(gs)),
           const Divider(height: 1),
@@ -352,6 +348,77 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
           _buildActions(gs),
         ],
       ),
+    );
+  }
+
+  // ── Deck / discard corners ────────────────────────────────────────────────
+
+  static const double _cw = 42.0;
+  static const double _ch = _cw * kCardHeight / kCardWidth;
+
+  Widget _buildCornersRow(_RemoteGS gs) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      child: Row(
+        children: [
+          if (gs.deckSize > 0) _buildDeckCorner(gs),
+          const Spacer(),
+          if (gs.discardSize > 0) _buildDiscardCorner(gs),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDeckCorner(_RemoteGS gs) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        // Deck card with trump peeking out to the right (Clip.none, so trump
+        // protrudes into the Spacer without shifting layout).
+        SizedBox(
+          width: _cw,
+          height: _ch,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              if (gs.trumpCard != null)
+                Positioned(
+                  left: _cw / 2,
+                  top: (_ch - _cw) / 2,
+                  child: RotatedBox(
+                    quarterTurns: 1,
+                    child: CardWidget(
+                      card: gs.trumpCard,
+                      faceUp: true,
+                      width: _cw,
+                    ),
+                  ),
+                ),
+              CardWidget(faceUp: false, width: _cw),
+            ],
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text('${gs.deckSize}',
+            style: const TextStyle(color: Colors.grey, fontSize: 13)),
+      ],
+    );
+  }
+
+  Widget _buildDiscardCorner(_RemoteGS gs) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Text('${gs.discardSize}',
+            style: const TextStyle(color: Colors.grey, fontSize: 13)),
+        const SizedBox(width: 6),
+        Transform.rotate(
+          angle: 0.12,
+          child: const CardWidget(faceUp: false, width: _cw),
+        ),
+      ],
     );
   }
 
@@ -435,7 +502,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    '${i + 1}',
+                    p.nickname.isEmpty ? '${i + 1}' : p.nickname,
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       color: isMe
@@ -458,16 +525,6 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
                         color: isDefender
                             ? Colors.lightBlue
                             : Colors.orange,
-                      ),
-                    ),
-                  ],
-                  if (isMe) ...[
-                    const SizedBox(width: 4),
-                    Text(
-                      '(вы)',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Theme.of(context).colorScheme.primary,
                       ),
                     ),
                   ],
@@ -724,7 +781,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
               Text(
                 isLoser
                     ? 'Вы — дурак'
-                    : 'Дурак: игрок ${loserIdx + 1}',
+                    : 'Дурак: ${gs.players[loserIdx].nickname.isEmpty ? 'игрок ${loserIdx + 1}' : gs.players[loserIdx].nickname}',
                 style: const TextStyle(color: Colors.grey, fontSize: 16),
               ),
             ],

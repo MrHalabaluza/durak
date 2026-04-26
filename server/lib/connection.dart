@@ -8,6 +8,7 @@ typedef CloseHandler = void Function(Connection conn);
 
 class Connection {
   final String playerId;
+  String nickname = '';
   final WebSocket _socket;
   Room? room;
 

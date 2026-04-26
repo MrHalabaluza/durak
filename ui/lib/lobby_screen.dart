@@ -12,6 +12,7 @@ class LobbyScreen extends StatefulWidget {
   final String host;
   final int port;
   final bool tls;
+  final String playerName;
 
   /// null — создать комнату, иначе — ID комнаты для входа
   final String? joinRoomId;
@@ -21,6 +22,7 @@ class LobbyScreen extends StatefulWidget {
     required this.host,
     required this.port,
     this.tls = false,
+    this.playerName = '',
     this.joinRoomId,
   });
 
@@ -41,7 +43,7 @@ class _LobbyScreenState extends State<LobbyScreen>
 
   String? _roomId;
   String? _myPlayerId;
-  List<String> _players = [];
+  List<({String id, String nickname})> _players = [];
   bool _gameStarted = false;
 
   DeckConfig _deckConfig = DeckConfig();
@@ -93,8 +95,12 @@ class _LobbyScreenState extends State<LobbyScreen>
       });
       _sub = stream.listen(_onMessage, onDone: _onDone, onError: _onError);
       _send(_isCreator
-          ? {'type': 'create_room'}
-          : {'type': 'join_room', 'roomId': widget.joinRoomId});
+          ? {'type': 'create_room', 'nickname': widget.playerName}
+          : {
+              'type': 'join_room',
+              'roomId': widget.joinRoomId,
+              'nickname': widget.playerName,
+            });
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -118,7 +124,13 @@ class _LobbyScreenState extends State<LobbyScreen>
         if (mounted) {
           setState(() {
             _roomId = map['roomId'] as String;
-            _players = List<String>.from(map['players'] as List);
+            _players = (map['players'] as List).map((e) {
+              final p = e as Map<String, dynamic>;
+              return (
+                id: p['id'] as String,
+                nickname: p['nickname'] as String? ?? '',
+              );
+            }).toList();
           });
         }
       case 'game_state':
@@ -456,10 +468,8 @@ class _LobbyScreenState extends State<LobbyScreen>
   }
 
   Widget _buildPlayerTile(int index) {
-    final id = _players[index];
-    final isMe = id == _myPlayerId;
-    final shortId =
-        id.length > 12 ? '${id.substring(0, 6)}…' : id;
+    final p = _players[index];
+    final isMe = p.id == _myPlayerId;
 
     return ListTile(
       shape: RoundedRectangleBorder(
@@ -479,16 +489,12 @@ class _LobbyScreenState extends State<LobbyScreen>
         child: Text('${index + 1}'),
       ),
       title: Text(
-        isMe ? 'Вы' : 'Игрок ${index + 1}',
+        p.nickname.isEmpty ? 'Игрок ${index + 1}' : p.nickname,
         style: isMe
             ? TextStyle(
                 fontWeight: FontWeight.bold,
                 color: Theme.of(context).colorScheme.primary)
             : null,
-      ),
-      subtitle: Text(
-        shortId,
-        style: const TextStyle(color: Colors.grey, fontSize: 11),
       ),
       trailing: isMe
           ? Icon(Icons.person,

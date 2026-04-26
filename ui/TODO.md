@@ -4,39 +4,39 @@
 
 ## PR1 — Ассеты и новый CardWidget
 
-- [ ] Добавить зависимости в `pubspec.yaml`: `flutter_svg`, `flutter_animate`.
-- [ ] Найти SVG-ассеты лиц карт под открытой лицензией (например, `byron-knoll/playing-cards` — public domain).
-- [ ] Положить лица в `ui/assets/cards/{suit}_{rank}.svg` (52 файла).
-- [ ] Положить дефолтную рубашку в `ui/assets/backs/default.svg`.
-- [ ] Подключить ассеты в `pubspec.yaml`.
-- [ ] Переписать `CardWidget`: параметры `faceUp`, `backSkinId`, размер карты параметризовать.
-- [ ] Перенести `CardWidget`-параметры `selected` / `highlighted` (рамка пожирнее, без свечения).
-- [ ] Реализовать `sortHand(List<Card> hand, Suit trump)` — порядок мастей `[♣,♦,♥,♠]` минус козырь, козырь в конец, внутри масти по `rank.index`.
-- [ ] Применить `sortHand` в текущей отрисовке руки (drag-data перевести на `card.id` вместо индекса).
+- [x] Добавить зависимости в `pubspec.yaml`: `flutter_svg`, `flutter_animate`.
+- [x] Найти SVG-ассеты лиц карт под открытой лицензией (сгенерированы placeholder-SVG; замена на art-quality ассеты — отдельная задача).
+- [x] Положить лица в `ui/assets/cards/{suit}_{rank}.svg` (52 файла).
+- [x] Положить дефолтную рубашку в `ui/assets/backs/default.svg`.
+- [x] Подключить ассеты в `pubspec.yaml`.
+- [x] Переписать `CardWidget`: параметры `faceUp`, `backSkinId`, размер карты параметризовать.
+- [x] Перенести `CardWidget`-параметры `selected` / `highlighted` (рамка пожирнее, без свечения).
+- [x] Реализовать `sortHand(List<Card> hand, Suit trump)` — порядок мастей `[♣,♦,♥,♠]` минус козырь, козырь в конец, внутри масти по `rank.index`.
+- [x] Применить `sortHand` в текущей отрисовке руки (drag-data перевести на `card.id` вместо индекса).
 
 ## PR2 — Trump card в logic + угол колоды/биты
 
-- [ ] `GameState.trumpCard: Card?` — добавить поле.
-- [ ] `Game.start`: зафиксировать `trumpCard` (нижняя/верхняя карта колоды по реализации `Deck`).
-- [ ] Обнулять `trumpCard` при опустении колоды.
-- [ ] `gameStateMsg`: сериализация `trumpCard`.
-- [ ] `_RemoteGS.fromJson`: десериализация `trumpCard`.
-- [ ] Виджет `_DeckCorner` (левый верх): закрытая карта + перпендикулярная trumpCard под ней + счётчик.
-- [ ] Виджет `_DiscardCorner` (правый верх): закрытая карта со счётчиком, лёгкий наклон для эффекта стопки.
+- [x] `GameState.trumpCard: Card?` — добавить поле.
+- [x] `Game.start`: зафиксировать `trumpCard` (нижняя/верхняя карта колоды по реализации `Deck`).
+- [x] Обнулять `trumpCard` при опустении колоды.
+- [x] `gameStateMsg`: сериализация `trumpCard`.
+- [x] `_RemoteGS.fromJson`: десериализация `trumpCard`.
+- [x] Виджет `_DeckCorner` (левый верх): закрытая карта + перпендикулярная trumpCard под ней + счётчик.
+- [x] Виджет `_DiscardCorner` (правый верх): закрытая карта со счётчиком, лёгкий наклон для эффекта стопки.
 
 ## PR3 — Никнейм
 
-- [ ] `AppSettings.load`: если `playerName == ''` — сгенерировать `Player_<NNN>` (3 случайные цифры) и сохранить.
-- [ ] `SettingsScreen`: поле «Никнейм», валидация (непустой, ≤ 20 символов).
-- [ ] Сервер: `JoinRoomMsg` / `CreateRoomMsg` принимают `nickname`, хранение `playerId → nickname`, разрешение коллизий суффиксом.
-- [ ] `roomStateMsg`, `gameStateMsg`: добавить `nickname` в каждого игрока.
-- [ ] `LobbyScreen`: передавать `nickname` из `AppSettings`.
-- [ ] `LobbyScreen` / `OnlineGameScreen`: показывать `nickname` вместо `playerId`.
+- [x] `AppSettings.load`: если `playerName == ''` — сгенерировать `Player_<NNN>` (3 случайные цифры) и сохранить.
+- [x] `SettingsScreen`: поле «Никнейм», валидация (непустой, ≤ 20 символов).
+- [x] Сервер: `JoinRoomMsg` / `CreateRoomMsg` принимают `nickname`, хранение `playerId → nickname`, разрешение коллизий суффиксом.
+- [x] `roomStateMsg`, `gameStateMsg`: добавить `nickname` в каждого игрока.
+- [x] `LobbyScreen`: передавать `nickname` из `AppSettings`.
+- [x] `LobbyScreen` / `OnlineGameScreen`: показывать `nickname` вместо `playerId`.
 
 ## PR4 — Круговой layout + удаление локального режима
 
-- [ ] Удалить `ui/lib/game_screen.dart`.
-- [ ] `main.dart`: убрать ветку «LOCAL» и связанные элементы из `SetupScreen`.
+- [x] Удалить `ui/lib/game_screen.dart`.
+- [x] `main.dart`: убрать ветку «LOCAL» и связанные элементы из `SetupScreen`.
 - [ ] Реализовать `_seatPositions(int count)` для 2/3/4/5/6 игроков.
 - [ ] Поворот круга: `seatIndex = (playerIndex - myIndex + count) % count` → 0 всегда снизу.
 - [ ] Виджет `_PlayerSeat`: компактный «веер» закрытых карт + ник + handSize, обводка пожирнее для активного игрока.
