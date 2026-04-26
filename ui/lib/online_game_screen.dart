@@ -286,19 +286,6 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     });
   }
 
-  void _transferByDrag(_RemoteGS gs, int displayId) {
-    final dragged = _cardByDisplayId(gs, displayId);
-    if (dragged == null) return;
-    final cards =
-        _selectedCardIds.contains(displayId) && _selectedCardIds.isNotEmpty
-            ? _selectedCards
-            : [dragged];
-    _doAction({
-      'type': 'transfer',
-      'cards': cards.map(_serCard).toList(),
-    });
-  }
-
   // ── Layout constants ──────────────────────────────────────────────────────
 
   static const _suitSymbol = {
@@ -321,8 +308,6 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     GamePhase.finished: 'Конец',
   };
 
-  static const double _cw = 42.0;
-  static const double _ch = _cw * kCardHeight / kCardWidth;
   static const double _handHeight = 116.0;
 
   // ── Seat positions ────────────────────────────────────────────────────────
@@ -459,7 +444,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
-      constraints: const BoxConstraints(maxWidth: 84),
+      constraints: const BoxConstraints(maxWidth: 96),
       decoration: BoxDecoration(
         color: Colors.black54,
         borderRadius: BorderRadius.circular(10),
@@ -493,13 +478,14 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
   }
 
   Widget _buildCardFan(int count) {
-    final shown = count.clamp(0, 7);
-    if (shown == 0) return const SizedBox(width: 50, height: 34);
-    const cardW = 24.0;
-    const step = 7.0;
+    final shown = count.clamp(0, 5);
+    if (shown == 0) {
+      return const SizedBox(width: kCardWidth, height: kCardHeight);
+    }
+    const step = 8.0;
     return SizedBox(
-      width: cardW + (shown - 1) * step,
-      height: 36,
+      width: kCardWidth + (shown - 1) * step,
+      height: kCardHeight,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
@@ -508,7 +494,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
               left: i * step,
               child: Transform.rotate(
                 angle: (i - (shown - 1) / 2) * 0.12,
-                child: CardWidget(faceUp: false, width: cardW),
+                child: const CardWidget(faceUp: false, width: kCardWidth),
               ),
             ),
         ],
@@ -524,25 +510,25 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         SizedBox(
-          width: _cw,
-          height: _ch,
+          width: kCardWidth,
+          height: kCardHeight,
           child: Stack(
             clipBehavior: Clip.none,
             children: [
               if (gs.trumpCard != null)
                 Positioned(
-                  left: _cw / 2,
-                  top: (_ch - _cw) / 2,
+                  left: kCardWidth / 2,
+                  top: (kCardHeight - kCardWidth) / 2,
                   child: RotatedBox(
                     quarterTurns: 1,
                     child: CardWidget(
                       card: gs.trumpCard,
                       faceUp: true,
-                      width: _cw,
+                      width: kCardWidth,
                     ),
                   ),
                 ),
-              CardWidget(faceUp: false, width: _cw),
+              const CardWidget(faceUp: false, width: kCardWidth),
             ],
           ),
         ),
@@ -567,7 +553,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
         const SizedBox(width: 5),
         Transform.rotate(
           angle: 0.12,
-          child: const CardWidget(faceUp: false, width: _cw),
+          child: const CardWidget(faceUp: false, width: kCardWidth),
         ),
       ],
     );
@@ -603,37 +589,33 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
   // ── Table ─────────────────────────────────────────────────────────────────
 
   Widget _buildTable(_RemoteGS gs) {
-    final isTransferDrop = _imDefender && gs.phase == GamePhase.defending;
-    final canDrop = isTransferDrop ||
+    // Defending phase drops are handled exclusively by per-card DragTargets
+    // (_buildTableEntry) to avoid both defend and transfer firing simultaneously.
+    final canDrop =
         (_imAttacker && gs.phase == GamePhase.attacking) ||
         (_canAdd &&
             (gs.phase == GamePhase.adding || gs.phase == GamePhase.taking));
 
     return DragTarget<int>(
       onWillAcceptWithDetails: (_) => canDrop,
-      onAcceptWithDetails: (d) => isTransferDrop
-          ? _transferByDrag(gs, d.data)
-          : _attackByDrag(gs, d.data),
+      onAcceptWithDetails: (d) => _attackByDrag(gs, d.data),
       builder: (context, candidateData, _) {
         final hovering = candidateData.isNotEmpty;
-        final hoverColor = isTransferDrop ? Colors.lightBlue : Colors.orange;
         return AnimatedContainer(
           duration: const Duration(milliseconds: 120),
           decoration: hovering
               ? BoxDecoration(
-                  border:
-                      Border.all(color: hoverColor.withAlpha(160), width: 2),
+                  border: Border.all(
+                      color: Colors.orange.withAlpha(160), width: 2),
                   borderRadius: BorderRadius.circular(8),
                 )
               : null,
           child: gs.table.isEmpty
               ? Center(
                   child: Text(
-                    hovering
-                        ? (isTransferDrop ? 'Перевести' : 'Бросить карту')
-                        : 'Стол пуст',
+                    hovering ? 'Бросить карту' : 'Стол пуст',
                     style: TextStyle(
-                      color: hovering ? hoverColor : Colors.grey,
+                      color: hovering ? Colors.orange : Colors.grey,
                       fontSize: 16,
                     ),
                   ),
@@ -643,6 +625,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
                   child: Wrap(
                     spacing: 12,
                     runSpacing: 12,
+                    alignment: WrapAlignment.center,
                     children:
                         gs.table.map((e) => _buildTableEntry(e, gs)).toList(),
                   ),
