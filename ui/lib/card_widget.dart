@@ -1,17 +1,29 @@
 import 'package:flutter/material.dart' hide Card;
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:durak_logic/durak_logic.dart';
 
+const double kCardWidth = 56;
+const double kCardHeight = 80;
+const double kCardAspectRatio = kCardWidth / kCardHeight;
+
+/// Stable display identifier for a card, invariant to list re-ordering.
+int cardDisplayId(Card c) => c.suit.index * 13 + c.rank.index;
+
 class CardWidget extends StatelessWidget {
-  final Card card;
-  final Suit trump;
+  final Card? card;
+  final bool faceUp;
+  final String backSkinId;
+  final double? width;
   final bool selected;
   final bool highlighted;
   final VoidCallback? onTap;
 
   const CardWidget({
     super.key,
-    required this.card,
-    required this.trump,
+    this.card,
+    this.faceUp = true,
+    this.backSkinId = 'default',
+    this.width,
     this.selected = false,
     this.highlighted = false,
     this.onTap,
@@ -19,89 +31,40 @@ class CardWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isTrump = card.suit == trump;
-    final isRed = card.suit == Suit.hearts || card.suit == Suit.diamonds;
+    final w = width ?? kCardWidth;
+    final h = w / kCardAspectRatio;
 
-    final suitSymbol = switch (card.suit) {
-      Suit.diamonds => '♦',
-      Suit.hearts => '♥',
-      Suit.clubs => '♣',
-      Suit.spades => '♠',
-    };
+    Color borderColor = Colors.grey.shade600;
+    double borderWidth = 1.5;
+    if (selected) {
+      borderColor = Colors.amber;
+      borderWidth = 3;
+    } else if (highlighted) {
+      borderColor = Colors.lightBlueAccent;
+      borderWidth = 3;
+    }
 
-    final rankLabel = switch (card.rank) {
-      Rank.two => '2',
-      Rank.three => '3',
-      Rank.four => '4',
-      Rank.five => '5',
-      Rank.six => '6',
-      Rank.seven => '7',
-      Rank.eight => '8',
-      Rank.nine => '9',
-      Rank.ten => '10',
-      Rank.jack => 'В',
-      Rank.queen => 'Д',
-      Rank.king => 'К',
-      Rank.ace => 'Т',
-    };
-
-    Color bg = Colors.white;
-    Color border = Colors.grey.shade400;
-    if (selected) border = Colors.yellow;
-    if (highlighted) border = Colors.lightBlue;
-    if (isTrump) bg = const Color(0xFFFFF9C4);
+    final assetPath = faceUp && card != null
+        ? 'assets/cards/${card!.suit.name}_${card!.rank.name}.svg'
+        : 'assets/backs/$backSkinId.svg';
 
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 100),
-        width: 56,
-        height: 80,
+        width: w,
+        height: h,
         decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(
-            color: border,
-            width: selected || highlighted ? 2.5 : 1,
-          ),
-          boxShadow: selected
-              ? [const BoxShadow(color: Colors.yellow, blurRadius: 6)]
-              : null,
+          borderRadius: BorderRadius.circular(6 * w / kCardWidth),
+          border: Border.all(color: borderColor, width: borderWidth),
         ),
-        child: Padding(
-          padding: const EdgeInsets.all(4),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                rankLabel,
-                style: TextStyle(
-                  color: isRed ? Colors.red : Colors.black,
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  height: 1,
-                ),
-              ),
-              Text(
-                suitSymbol,
-                style: TextStyle(
-                  color: isRed ? Colors.red : Colors.black,
-                  fontSize: 14,
-                  height: 1,
-                ),
-              ),
-              const Spacer(),
-              Align(
-                alignment: Alignment.bottomRight,
-                child: Text(
-                  suitSymbol,
-                  style: TextStyle(
-                    color: isRed ? Colors.red : Colors.black,
-                    fontSize: 10,
-                  ),
-                ),
-              ),
-            ],
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(5 * w / kCardWidth),
+          child: SvgPicture.asset(
+            assetPath,
+            width: w,
+            height: h,
+            fit: BoxFit.fill,
           ),
         ),
       ),

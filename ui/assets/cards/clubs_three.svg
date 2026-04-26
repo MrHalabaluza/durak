@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="56" height="80" viewBox="0 0 56 80">
+  <rect width="56" height="80" rx="6" fill="#F8F8FF"/>
+  <text x="5" y="15" font-family="Georgia,serif" font-size="13" font-weight="bold" fill="#222222">3</text>
+  <text x="5" y="28" font-family="Georgia,serif" font-size="12" fill="#222222">♣</text>
+  <text x="28" y="51" font-family="Georgia,serif" font-size="26" fill="#222222" text-anchor="middle" dominant-baseline="middle">♣</text>
+  <g transform="rotate(180 28 40)">
+    <text x="5" y="15" font-family="Georgia,serif" font-size="13" font-weight="bold" fill="#222222">3</text>
+    <text x="5" y="28" font-family="Georgia,serif" font-size="12" fill="#222222">♣</text>
+  </g>
+</svg>

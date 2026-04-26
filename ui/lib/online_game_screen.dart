@@ -4,6 +4,7 @@ import 'package:flutter/material.dart' hide Card;
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:durak_logic/durak_logic.dart';
 import 'card_widget.dart';
+import 'sort_hand.dart';
 
 // ── Deserialization ───────────────────────────────────────────────────────────
 
@@ -125,7 +126,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
   _RemoteGS? _gs;
   String? _error;
 
-  final Set<int> _selectedHandIndices = {};
+  final Set<int> _selectedCardIds = {};
   Card? _selectedAttackCard;
 
   @override
@@ -161,7 +162,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     if (type == 'game_state') {
       setState(() {
         _gs = _RemoteGS.fromJson(map);
-        _selectedHandIndices.clear();
+        _selectedCardIds.clear();
         _selectedAttackCard = null;
         _error = null;
       });
@@ -183,8 +184,9 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
-  List<Card> get _selectedCards =>
-      _selectedHandIndices.map((i) => _gs!.hand[i]).toList();
+  List<Card> get _selectedCards => _gs!.hand
+      .where((c) => _selectedCardIds.contains(cardDisplayId(c)))
+      .toList();
 
   bool get _imAttacker =>
       _gs!.players[_gs!.attackerIndex].id == widget.myPlayerId;
@@ -200,7 +202,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
   void _doAction(Map<String, dynamic> msg) {
     _send(msg);
     setState(() {
-      _selectedHandIndices.clear();
+      _selectedCardIds.clear();
       _selectedAttackCard = null;
     });
   }
@@ -238,13 +240,15 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
 
   void _take() => _doAction({'type': 'take'});
 
-  void _attackByDrag(_RemoteGS gs, int handIndex) {
-    // If the dragged card is part of the current selection, send all selected;
-    // otherwise send just the dragged card.
-    final cards = _selectedHandIndices.contains(handIndex) &&
-            _selectedHandIndices.isNotEmpty
+  Card? _cardByDisplayId(_RemoteGS gs, int displayId) =>
+      gs.hand.where((c) => cardDisplayId(c) == displayId).firstOrNull;
+
+  void _attackByDrag(_RemoteGS gs, int displayId) {
+    final dragged = _cardByDisplayId(gs, displayId);
+    if (dragged == null) return;
+    final cards = _selectedCardIds.contains(displayId) && _selectedCardIds.isNotEmpty
         ? _selectedCards
-        : [gs.hand[handIndex]];
+        : [dragged];
     final isAdding =
         gs.phase == GamePhase.adding || gs.phase == GamePhase.taking;
     _doAction({
@@ -253,19 +257,22 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     });
   }
 
-  void _defendByDrag(Card attackCard, int handIndex) {
+  void _defendByDrag(Card attackCard, int displayId) {
+    final defense = _cardByDisplayId(_gs!, displayId);
+    if (defense == null) return;
     _doAction({
       'type': 'defend',
       'attackCard': _serCard(attackCard),
-      'defenseCard': _serCard(_gs!.hand[handIndex]),
+      'defenseCard': _serCard(defense),
     });
   }
 
-  void _transferByDrag(_RemoteGS gs, int handIndex) {
-    final cards = _selectedHandIndices.contains(handIndex) &&
-            _selectedHandIndices.isNotEmpty
+  void _transferByDrag(_RemoteGS gs, int displayId) {
+    final dragged = _cardByDisplayId(gs, displayId);
+    if (dragged == null) return;
+    final cards = _selectedCardIds.contains(displayId) && _selectedCardIds.isNotEmpty
         ? _selectedCards
-        : [gs.hand[handIndex]];
+        : [dragged];
     _doAction({
       'type': 'transfer',
       'cards': cards.map(_serCard).toList(),
@@ -541,7 +548,6 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
               children: [
                 CardWidget(
                   card: entry.attack,
-                  trump: gs.trump,
                   selected: isSelected || hovering,
                   highlighted: canDefend && !isSelected && !hovering,
                 ),
@@ -549,10 +555,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
                   Positioned(
                     top: 16,
                     left: 16,
-                    child: CardWidget(
-                      card: entry.defense!,
-                      trump: gs.trump,
-                    ),
+                    child: CardWidget(card: entry.defense!),
                   ),
               ],
             ),
@@ -571,40 +574,37 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
         ),
       );
     }
+    final sorted = sortHand(gs.hand, gs.trump);
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       child: Row(
         children: [
-          for (int i = 0; i < gs.hand.length; i++)
+          for (final card in sorted)
             Padding(
               padding: const EdgeInsets.only(right: 8),
               child: Draggable<int>(
-                data: i,
+                data: cardDisplayId(card),
                 feedback: Material(
                   color: Colors.transparent,
                   child: Transform.scale(
                     scale: 1.1,
-                    child: CardWidget(
-                      card: gs.hand[i],
-                      trump: gs.trump,
-                      selected: true,
-                    ),
+                    child: CardWidget(card: card, selected: true),
                   ),
                 ),
                 childWhenDragging: Opacity(
                   opacity: 0.35,
-                  child: CardWidget(card: gs.hand[i], trump: gs.trump),
+                  child: CardWidget(card: card),
                 ),
                 child: CardWidget(
-                  card: gs.hand[i],
-                  trump: gs.trump,
-                  selected: _selectedHandIndices.contains(i),
+                  card: card,
+                  selected: _selectedCardIds.contains(cardDisplayId(card)),
                   onTap: () => setState(() {
-                    if (_selectedHandIndices.contains(i)) {
-                      _selectedHandIndices.remove(i);
+                    final id = cardDisplayId(card);
+                    if (_selectedCardIds.contains(id)) {
+                      _selectedCardIds.remove(id);
                     } else {
-                      _selectedHandIndices.add(i);
+                      _selectedCardIds.add(id);
                     }
                   }),
                 ),
