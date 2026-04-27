@@ -33,14 +33,17 @@ class Game {
     final deck = Deck.standard(config ?? DeckConfig());
     deck.shuffle(rng);
 
-    final players = playerIds.map(Player.new).toList();
-    for (final p in players) {
-      p.addCards(deck.drawMany(_initialDeal));
-    }
-
+    // Pull trump before dealing so the deal never accidentally draws it.
     final trumpCard = deck.pullTrumpCard();
     if (trumpCard == null) throw const GameException('Not enough cards in deck');
     final trump = trumpCard.suit;
+
+    final players = playerIds.map(Player.new).toList();
+    // Deal up to _initialDeal cards each; limited by non-trump cards available.
+    final dealCount = ((deck.size - 1) ~/ players.length).clamp(0, _initialDeal);
+    for (final p in players) {
+      p.addCards(deck.drawMany(dealCount));
+    }
 
     final firstIdx = _firstPlayerIndex(players, trump, rng);
     final defIdx = (firstIdx + 1) % players.length;

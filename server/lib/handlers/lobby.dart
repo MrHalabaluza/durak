@@ -84,6 +84,10 @@ void _start(Connection conn, DeckConfig? deckConfig) {
     return;
   }
   if (!room.startGame(deckConfig)) {
-    conn.send(errorMsg('Cannot start: need 2–6 players'));
+    if (room.isStarted) {
+      conn.send(errorMsg('Game already started'));
+    } else {
+      conn.send(errorMsg('Cannot start: need at least 2 players'));
+    }
   }
 }
