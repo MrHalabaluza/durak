@@ -38,7 +38,7 @@ class Game {
       p.addCards(deck.drawMany(_initialDeal));
     }
 
-    final trumpCard = deck.topCard;
+    final trumpCard = deck.pullTrumpCard();
     if (trumpCard == null) throw const GameException('Not enough cards in deck');
     final trump = trumpCard.suit;
 

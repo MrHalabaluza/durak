@@ -61,8 +61,8 @@ class GameState {
   Player get attacker => players[attackerIndex];
   Player get defender => players[defenderIndex];
 
-  /// The face-up trump card lying under the deck; null when deck is empty.
-  Card? get trumpCard => deck.topCard;
+  /// The face-up trump card lying at the bottom of the deck; null when deck is empty.
+  Card? get trumpCard => deck.bottomCard;
 
   List<Player> get activePlayers => players.where((p) => !p.hasLeft).toList();
 

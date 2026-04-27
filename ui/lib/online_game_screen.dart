@@ -286,57 +286,52 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     });
   }
 
-  // ── Layout constants ──────────────────────────────────────────────────────
+  void _transferByDrag(_RemoteGS gs, int displayId) {
+    final dragged = _cardByDisplayId(gs, displayId);
+    if (dragged == null) return;
+    final cards = _selectedCardIds.contains(displayId) && _selectedCardIds.isNotEmpty
+        ? _selectedCards
+        : [dragged];
+    _doAction({
+      'type': 'transfer',
+      'cards': cards.map(_serCard).toList(),
+    });
+  }
 
-  static const _suitSymbol = {
-    Suit.diamonds: '♦',
-    Suit.hearts: '♥',
-    Suit.clubs: '♣',
-    Suit.spades: '♠',
-  };
-  static const _suitColor = {
-    Suit.diamonds: Colors.redAccent,
-    Suit.hearts: Colors.redAccent,
-    Suit.clubs: Colors.white70,
-    Suit.spades: Colors.white70,
-  };
-  static const _phaseLabel = {
-    GamePhase.attacking: 'Атака',
-    GamePhase.defending: 'Защита',
-    GamePhase.adding: 'Подкидывание',
-    GamePhase.taking: 'Добор',
-    GamePhase.finished: 'Конец',
-  };
+  // ── Layout constants ──────────────────────────────────────────────────────
 
   static const double _handHeight = 116.0;
 
   // ── Seat positions ────────────────────────────────────────────────────────
 
-  /// Returns [count-1] alignment positions for opponents (seatIndex 1..count-1).
-  /// seatIndex 0 is always the local player at the bottom.
   static List<Alignment> _seatPositions(int count) => switch (count) {
-        2 => const [Alignment(0.0, -0.7)],
-        3 => const [Alignment(-0.55, -0.7), Alignment(0.55, -0.7)],
+        2 => const [Alignment(0.00, -0.72)],
+        3 => const [Alignment(-0.50, -0.72), Alignment(0.50, -0.72)],
         4 => const [
-            Alignment(-0.88, 0.0),
-            Alignment(0.0, -0.7),
-            Alignment(0.88, 0.0),
+            Alignment(-0.88, 0.15),
+            Alignment(0.00, -0.72),
+            Alignment(0.88, 0.15),
           ],
         5 => const [
-            Alignment(-0.88, 0.0),
-            Alignment(-0.5, -0.7),
-            Alignment(0.5, -0.7),
-            Alignment(0.88, 0.0),
+            Alignment(-0.88, 0.15),
+            Alignment(-0.45, -0.72),
+            Alignment(0.45, -0.72),
+            Alignment(0.88, 0.15),
           ],
         6 => const [
-            Alignment(-0.88, 0.0),
-            Alignment(-0.6, -0.7),
-            Alignment(0.0, -0.7),
-            Alignment(0.6, -0.7),
-            Alignment(0.88, 0.0),
+            Alignment(-0.88, 0.15),
+            Alignment(-0.55, -0.72),
+            Alignment(0.00, -0.72),
+            Alignment(0.55, -0.72),
+            Alignment(0.88, 0.15),
           ],
         _ => const [],
       };
+
+  static EdgeInsets _tablePadding(int playerCount) =>
+      playerCount <= 3
+          ? const EdgeInsets.fromLTRB(8, 140, 8, 8)
+          : const EdgeInsets.fromLTRB(80, 140, 80, 8);
 
   // ── Build ─────────────────────────────────────────────────────────────────
 
@@ -355,7 +350,8 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
         child: Column(
           children: [
             if (_error != null) _buildErrorBanner(),
-            Expanded(child: _buildGameArea(gs)),
+            _buildStatusBar(gs),
+            Expanded(child: _buildTableArea(gs)),
             _buildActionsBar(gs),
             SizedBox(height: _handHeight, child: _buildHand(gs)),
           ],
@@ -364,67 +360,30 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     );
   }
 
-  // ── Game area (circular layout) ───────────────────────────────────────────
+  // ── Table area ────────────────────────────────────────────────────────────
 
-  Widget _buildGameArea(_RemoteGS gs) {
+  Widget _buildTableArea(_RemoteGS gs) {
     final myIndex = gs.players.indexWhere((p) => p.id == widget.myPlayerId);
     final count = gs.players.length;
     final positions = _seatPositions(count);
 
     return Stack(
       children: [
-        // Table fills center; top padding leaves room for seats and corners
         Positioned.fill(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(8, 76, 8, 8),
-            child: _buildTable(gs),
+            padding: _tablePadding(count),
+            child: _buildTableGrid(gs),
           ),
         ),
-        // Trump + phase label at top center
-        Positioned(
-          top: 4,
-          left: 0,
-          right: 0,
-          child: _buildInfoBar(gs),
-        ),
-        // Deck corner — top-left
-        if (gs.deckSize > 0)
-          Positioned(left: 8, top: 30, child: _buildDeckCorner(gs)),
-        // Discard corner — top-right
-        if (gs.discardSize > 0)
-          Positioned(right: 8, top: 30, child: _buildDiscardCorner(gs)),
-        // Opponent seats arranged around the circle
         for (int si = 1; si < count; si++)
           Align(
             alignment: positions[si - 1],
             child: _buildPlayerSeat(gs, (myIndex + si) % count),
           ),
-        // FAB in bottom-right of game area
         Positioned(
           right: 8,
           bottom: 8,
           child: _buildFab(gs) ?? const SizedBox.shrink(),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildInfoBar(_RemoteGS gs) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Text(
-          _suitSymbol[gs.trump]!,
-          style: TextStyle(
-            fontSize: 18,
-            color: _suitColor[gs.trump],
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        const SizedBox(width: 6),
-        Text(
-          _phaseLabel[gs.phase]!,
-          style: const TextStyle(fontSize: 13, color: Colors.white70),
         ),
       ],
     );
@@ -502,12 +461,31 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     );
   }
 
-  // ── Deck / discard corners ────────────────────────────────────────────────
+  // ── Status bar ────────────────────────────────────────────────────────────
 
-  Widget _buildDeckCorner(_RemoteGS gs) {
-    return Row(
+  String _playerName(_RemoteGS gs, int index) {
+    final p = gs.players[index];
+    return p.nickname.isEmpty ? 'Игрок ${index + 1}' : p.nickname;
+  }
+
+  Widget _buildStatusBar(_RemoteGS gs) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildDeckStatus(gs),
+          Expanded(child: _buildStatusText(gs)),
+          _buildDiscardStatus(gs),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDeckStatus(_RemoteGS gs) {
+    if (gs.deckSize == 0) return SizedBox(width: kCardWidth);
+    return Column(
       mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         SizedBox(
           width: kCardWidth,
@@ -532,29 +510,67 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
             ],
           ),
         ),
-        const SizedBox(width: 5),
+        const SizedBox(height: 3),
         Text(
           '${gs.deckSize}',
-          style: const TextStyle(color: Colors.grey, fontSize: 12),
+          style: const TextStyle(color: Colors.grey, fontSize: 11),
         ),
       ],
     );
   }
 
-  Widget _buildDiscardCorner(_RemoteGS gs) {
-    return Row(
+  Widget _buildDiscardStatus(_RemoteGS gs) {
+    if (gs.discardSize == 0) return SizedBox(width: kCardWidth);
+    return Column(
       mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Text(
-          '${gs.discardSize}',
-          style: const TextStyle(color: Colors.grey, fontSize: 12),
-        ),
-        const SizedBox(width: 5),
         Transform.rotate(
           angle: 0.12,
           child: const CardWidget(faceUp: false, width: kCardWidth),
         ),
+        const SizedBox(height: 3),
+        Text(
+          '${gs.discardSize}',
+          style: const TextStyle(color: Colors.grey, fontSize: 11),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStatusText(_RemoteGS gs) {
+    final (line1, line2) = switch (gs.phase) {
+      GamePhase.attacking => (
+          '${_playerName(gs, gs.attackerIndex)} ходит',
+          'под ${_playerName(gs, gs.defenderIndex)}',
+        ),
+      GamePhase.defending => (
+          '${_playerName(gs, gs.defenderIndex)} отбивается',
+          '',
+        ),
+      GamePhase.adding => (
+          '${_playerName(gs, gs.currentAdderIndex)} подкидывает',
+          'под ${_playerName(gs, gs.defenderIndex)}',
+        ),
+      GamePhase.taking => (
+          '${_playerName(gs, gs.defenderIndex)} берёт',
+          '',
+        ),
+      _ => ('', ''),
+    };
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Text(
+          line1,
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontSize: 13, color: Colors.white),
+        ),
+        if (line2.isNotEmpty)
+          Text(
+            line2,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 12, color: Colors.white60),
+          ),
       ],
     );
   }
@@ -586,50 +602,69 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     );
   }
 
-  // ── Table ─────────────────────────────────────────────────────────────────
+  // ── Table grid ────────────────────────────────────────────────────────────
 
-  Widget _buildTable(_RemoteGS gs) {
-    // Defending phase drops are handled exclusively by per-card DragTargets
-    // (_buildTableEntry) to avoid both defend and transfer firing simultaneously.
-    final canDrop =
+  Widget _buildTableGrid(_RemoteGS gs) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (int row = 0; row < 3; row++)
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (int col = 0; col < 3; col++)
+                  Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: SizedBox(
+                      width: 72,
+                      height: 96,
+                      child: _tableCell(gs, row * 3 + col),
+                    ),
+                  ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _tableCell(_RemoteGS gs, int i) => i < gs.table.length
+      ? _buildTableEntry(gs.table[i], gs)
+      : _buildEmptyTableCell(gs);
+
+  Widget _buildEmptyTableCell(_RemoteGS gs) {
+    final isTransfer = _imDefender && gs.phase == GamePhase.defending;
+    final canDrop = isTransfer ||
         (_imAttacker && gs.phase == GamePhase.attacking) ||
         (_canAdd &&
             (gs.phase == GamePhase.adding || gs.phase == GamePhase.taking));
 
     return DragTarget<int>(
       onWillAcceptWithDetails: (_) => canDrop,
-      onAcceptWithDetails: (d) => _attackByDrag(gs, d.data),
+      onAcceptWithDetails: (d) => isTransfer
+          ? _transferByDrag(gs, d.data)
+          : _attackByDrag(gs, d.data),
       builder: (context, candidateData, _) {
         final hovering = candidateData.isNotEmpty;
         return AnimatedContainer(
           duration: const Duration(milliseconds: 120),
-          decoration: hovering
-              ? BoxDecoration(
-                  border: Border.all(
-                      color: Colors.orange.withAlpha(160), width: 2),
-                  borderRadius: BorderRadius.circular(8),
-                )
-              : null,
-          child: gs.table.isEmpty
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: hovering ? Colors.orange.withAlpha(160) : Colors.white12,
+              width: hovering ? 2 : 1,
+            ),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: hovering
               ? Center(
                   child: Text(
-                    hovering ? 'Бросить карту' : 'Стол пуст',
-                    style: TextStyle(
-                      color: hovering ? Colors.orange : Colors.grey,
-                      fontSize: 16,
-                    ),
+                    isTransfer ? 'Перевести' : 'Бросить',
+                    style: const TextStyle(color: Colors.orange, fontSize: 11),
                   ),
                 )
-              : SingleChildScrollView(
-                  padding: const EdgeInsets.all(12),
-                  child: Wrap(
-                    spacing: 12,
-                    runSpacing: 12,
-                    alignment: WrapAlignment.center,
-                    children:
-                        gs.table.map((e) => _buildTableEntry(e, gs)).toList(),
-                  ),
-                ),
+              : null,
         );
       },
     );
