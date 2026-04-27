@@ -7,6 +7,50 @@ import 'package:durak_logic/durak_logic.dart';
 import 'card_widget.dart';
 import 'sort_hand.dart';
 
+// ── Card string helper ────────────────────────────────────────────────────────
+
+String _cardStr(Card c) {
+  const suits = {
+    Suit.diamonds: '♦', Suit.hearts: '♥', Suit.clubs: '♣', Suit.spades: '♠',
+  };
+  const ranks = {
+    Rank.two: '2', Rank.three: '3', Rank.four: '4', Rank.five: '5',
+    Rank.six: '6', Rank.seven: '7', Rank.eight: '8', Rank.nine: '9',
+    Rank.ten: '10', Rank.jack: 'В', Rank.queen: 'Д', Rank.king: 'К', Rank.ace: 'Т',
+  };
+  return '${suits[c.suit]}${ranks[c.rank]}';
+}
+
+// ── Log entry ─────────────────────────────────────────────────────────────────
+
+class _LogEntry {
+  final DateTime timestamp;
+  final String actorNickname;
+  final String type; // 'attack','add_attack','defend','transfer','take','beat'
+  final List<Card> cards;
+
+  const _LogEntry({
+    required this.timestamp,
+    required this.actorNickname,
+    required this.type,
+    this.cards = const [],
+  });
+
+  String get text {
+    final cStr = cards.isEmpty ? '' : ' ${cards.map(_cardStr).join(' ')}';
+    final a = actorNickname.isEmpty ? '' : '$actorNickname ';
+    return switch (type) {
+      'attack'     => '$aатаковал$cStr',
+      'add_attack' => '$aподкинул$cStr',
+      'defend'     => '$aотбил$cStr',
+      'transfer'   => '$aперевёл$cStr',
+      'take'       => '$aвзял карты',
+      'beat'       => 'Бито',
+      _            => '$a$type$cStr',
+    };
+  }
+}
+
 // ── Deserialization ───────────────────────────────────────────────────────────
 
 Card _parseCard(Map<String, dynamic> m) => Card(
@@ -136,6 +180,8 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
   final Set<int> _selectedCardIds = {};
   Card? _selectedAttackCard;
 
+  final List<_LogEntry> _log = [];
+
   @override
   void initState() {
     super.initState();
@@ -173,14 +219,89 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
   void _onData(Map<String, dynamic> map) {
     final type = map['type'] as String;
     if (type == 'game_state') {
+      final newGs = _RemoteGS.fromJson(map);
+      if (_gs != null) _diffAndLog(_gs!, newGs);
       setState(() {
-        _gs = _RemoteGS.fromJson(map);
+        _gs = newGs;
         _selectedCardIds.clear();
         _selectedAttackCard = null;
         _error = null;
       });
     } else if (type == 'error') {
       setState(() => _error = map['message'] as String);
+    }
+  }
+
+  void _diffAndLog(_RemoteGS prev, _RemoteGS next) {
+    if (prev.phase == GamePhase.finished) {
+      _log.clear();
+      return;
+    }
+
+    String nick(_RemotePlayer p) => p.nickname.isEmpty ? 'Игрок' : p.nickname;
+
+    final prevAttacks = prev.table.map((e) => e.attack).toSet();
+    final nextAttacks = next.table.map((e) => e.attack).toSet();
+
+    // Table cleared
+    if (prev.table.isNotEmpty && next.table.isEmpty) {
+      if (next.discardSize > prev.discardSize) {
+        _log.add(_LogEntry(timestamp: DateTime.now(), actorNickname: '', type: 'beat'));
+      } else {
+        _log.add(_LogEntry(
+          timestamp: DateTime.now(),
+          actorNickname: nick(prev.players[prev.defenderIndex]),
+          type: 'take',
+        ));
+      }
+      return;
+    }
+
+    // Defender changed → transfer/transit
+    if (prev.defenderIndex != next.defenderIndex && prev.table.isNotEmpty) {
+      final newCards = nextAttacks.difference(prevAttacks).toList();
+      _log.add(_LogEntry(
+        timestamp: DateTime.now(),
+        actorNickname: nick(prev.players[prev.defenderIndex]),
+        type: 'transfer',
+        cards: newCards,
+      ));
+      return;
+    }
+
+    // New attack cards appeared
+    final newAttacks = nextAttacks.difference(prevAttacks);
+    if (newAttacks.isNotEmpty) {
+      if (prev.table.isEmpty) {
+        _log.add(_LogEntry(
+          timestamp: DateTime.now(),
+          actorNickname: nick(next.players[next.attackerIndex]),
+          type: 'attack',
+          cards: newAttacks.toList(),
+        ));
+      } else {
+        _log.add(_LogEntry(
+          timestamp: DateTime.now(),
+          actorNickname: nick(prev.players[prev.currentAdderIndex]),
+          type: 'add_attack',
+          cards: newAttacks.toList(),
+        ));
+      }
+    }
+
+    // New defense cards appeared
+    for (final nextEntry in next.table) {
+      if (nextEntry.defense == null) continue;
+      final prevEntry =
+          prev.table.where((e) => e.attack == nextEntry.attack).firstOrNull;
+      if (prevEntry != null && prevEntry.defense == null) {
+        _log.add(_LogEntry(
+          timestamp: DateTime.now(),
+          actorNickname: nick(prev.players[prev.defenderIndex]),
+          type: 'defend',
+          cards: [nextEntry.defense!],
+        ));
+      }
     }
   }
 
@@ -298,6 +419,73 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     });
   }
 
+  // ── Log strip ─────────────────────────────────────────────────────────────
+
+  void _showLogSheet() {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Text('История партии',
+                style: Theme.of(ctx).textTheme.titleMedium),
+          ),
+          Expanded(
+            child: _log.isEmpty
+                ? const Center(
+                    child: Text('Нет действий',
+                        style: TextStyle(color: Colors.grey)))
+                : ListView.builder(
+                    reverse: true,
+                    itemCount: _log.length,
+                    itemBuilder: (ctx, i) {
+                      final e = _log[_log.length - 1 - i];
+                      final t = e.timestamp;
+                      final ts =
+                          '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}:${t.second.toString().padLeft(2, '0')}';
+                      return ListTile(
+                        dense: true,
+                        leading: Text(ts,
+                            style: const TextStyle(
+                                color: Colors.grey, fontSize: 11)),
+                        title: Text(e.text,
+                            style: const TextStyle(fontSize: 13)),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLogStrip() {
+    final last = _log.isEmpty ? null : _log.last;
+    return GestureDetector(
+      onTap: _showLogSheet,
+      child: Container(
+        width: double.infinity,
+        color: Colors.black38,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        child: Row(
+          children: [
+            const Icon(Icons.history, size: 13, color: Colors.white54),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                last?.text ?? 'Лог действий',
+                style: const TextStyle(fontSize: 12, color: Colors.white70),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const Icon(Icons.expand_less, size: 13, color: Colors.white38),
+          ],
+        ),
+      ),
+    );
+  }
+
   // ── Layout constants ──────────────────────────────────────────────────────
 
   static const double _handHeight = 116.0;
@@ -353,6 +541,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
             _buildStatusBar(gs),
             Expanded(child: _buildTableArea(gs)),
             _buildActionsBar(gs),
+            _buildLogStrip(),
             SizedBox(height: _handHeight, child: _buildHand(gs)),
           ],
         ),
