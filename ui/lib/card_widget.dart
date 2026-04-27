@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart' hide Card;
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:durak_logic/durak_logic.dart';
 
 const double kCardWidth = 56;
@@ -45,8 +44,8 @@ class CardWidget extends StatelessWidget {
     }
 
     final assetPath = faceUp && card != null
-        ? 'assets/cards/${card!.suit.name}_${card!.rank.name}.svg'
-        : 'assets/backs/$backSkinId.svg';
+        ? 'assets/cards/${card!.suit.name}_${card!.rank.name}.png'
+        : 'assets/backs/$backSkinId.png';
 
     return GestureDetector(
       onTap: onTap,
@@ -60,7 +59,7 @@ class CardWidget extends StatelessWidget {
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(5 * w / kCardWidth),
-          child: SvgPicture.asset(
+          child: Image.asset(
             assetPath,
             width: w,
             height: h,
