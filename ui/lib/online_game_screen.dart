@@ -239,8 +239,9 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
       if (next.players.any((p) => p.handSize > 0)) {
         final prev = _preDealState(next);
         _animating = true;
+        final initGen = _animGeneration;
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
+          if (mounted && initGen == _animGeneration) {
             _animateChanges(prev, next,
                 step: const Duration(milliseconds: 40));
           }
@@ -293,9 +294,10 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden) {
-      if (_animating && mounted) _cancelAnimations();
+      if (mounted) _cancelAnimations();
     } else if (state == AppLifecycleState.resumed && mounted) {
-      setState(() {});
+      // Bump generation to invalidate any postFrameCallbacks queued while inactive.
+      _cancelAnimations();
     }
   }
 
@@ -337,11 +339,14 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
       if (prev != null && _willAnimate(prev, next)) {
         // Флаг устанавливается до postFrameCallback, чтобы build уже видел его
         _animating = true;
+        final animGen = _animGeneration;
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
+          if (mounted && animGen == _animGeneration) {
             _animateChanges(prev, next,
                 prevHandPositions: prevHandPositions,
                 prevTableCellPositions: prevTableCellPositions);
+          } else if (mounted && _animating) {
+            setState(() => _animating = false);
           }
         });
       }
@@ -818,6 +823,19 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
 
   void _take() => _doAction({'type': 'take'});
 
+  void _swipeUpCard(_RemoteGS gs, Card card) {
+    final id = cardDisplayId(card);
+    final isTransfer = _imDefender && gs.phase == GamePhase.defending;
+    final canAttack = _imAttacker && gs.phase == GamePhase.attacking;
+    final canAdd = _canAdd &&
+        (gs.phase == GamePhase.adding || gs.phase == GamePhase.taking);
+    if (isTransfer) {
+      _transferByDrag(gs, id);
+    } else if (canAttack || canAdd) {
+      _attackByDrag(gs, id);
+    }
+  }
+
   Card? _cardByDisplayId(_RemoteGS gs, int displayId) =>
       gs.hand.where((c) => cardDisplayId(c) == displayId).firstOrNull;
 
@@ -1014,7 +1032,12 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
         for (int si = 1; si < count; si++)
           Align(
             alignment: positions[si - 1],
-            child: _buildPlayerSeat(gs, (myIndex + si) % count),
+            child: FractionalTranslation(
+              translation: positions[si - 1].y < 0
+                  ? const Offset(0, -0.15)
+                  : Offset.zero,
+              child: _buildPlayerSeat(gs, (myIndex + si) % count),
+            ),
           ),
         Positioned(
           right: 8,
@@ -1381,31 +1404,38 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
                 maintainSize: true,
                 maintainAnimation: true,
                 maintainState: true,
-                child: Draggable<int>(
-                  data: cardDisplayId(card),
-                  maxSimultaneousDrags: _animating ? 0 : 1,
-                  feedback: Material(
-                    color: Colors.transparent,
-                    child: Transform.scale(
-                      scale: 1.1,
-                      child: CardWidget(card: card, selected: true),
+                child: GestureDetector(
+                  onVerticalDragEnd: (details) {
+                    final vel = details.primaryVelocity ?? 0;
+                    if (vel < -500 && !_animating) _swipeUpCard(gs, card);
+                  },
+                  child: LongPressDraggable<int>(
+                    data: cardDisplayId(card),
+                    maxSimultaneousDrags: _animating ? 0 : 1,
+                    delay: const Duration(milliseconds: 180),
+                    feedback: Material(
+                      color: Colors.transparent,
+                      child: Transform.scale(
+                        scale: 1.1,
+                        child: CardWidget(card: card, selected: true),
+                      ),
                     ),
-                  ),
-                  childWhenDragging: Opacity(
-                    opacity: 0.35,
-                    child: CardWidget(card: card),
-                  ),
-                  child: CardWidget(
-                    card: card,
-                    selected: _selectedCardIds.contains(cardDisplayId(card)),
-                    onTap: _animating ? null : () => setState(() {
-                      final id = cardDisplayId(card);
-                      if (_selectedCardIds.contains(id)) {
-                        _selectedCardIds.remove(id);
-                      } else {
-                        _selectedCardIds.add(id);
-                      }
-                    }),
+                    childWhenDragging: Opacity(
+                      opacity: 0.35,
+                      child: CardWidget(card: card),
+                    ),
+                    child: CardWidget(
+                      card: card,
+                      selected: _selectedCardIds.contains(cardDisplayId(card)),
+                      onTap: _animating ? null : () => setState(() {
+                        final id = cardDisplayId(card);
+                        if (_selectedCardIds.contains(id)) {
+                          _selectedCardIds.remove(id);
+                        } else {
+                          _selectedCardIds.add(id);
+                        }
+                      }),
+                    ),
                   ),
                 ),
               ),
