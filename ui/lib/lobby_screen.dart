@@ -45,6 +45,7 @@ class _LobbyScreenState extends State<LobbyScreen>
   String? _myPlayerId;
   List<({String id, String nickname})> _players = [];
   bool _gameStarted = false;
+  Map<String, dynamic>? _latestGameState;
 
   DeckConfig _deckConfig = DeckConfig();
 
@@ -134,6 +135,11 @@ class _LobbyScreenState extends State<LobbyScreen>
           });
         }
       case 'game_state':
+        // Always track the latest state so that if the window is inactive
+        // when the game starts (no frames rendered → postFrameCallback is
+        // deferred), we hand off the most recent state to OnlineGameScreen
+        // instead of the stale initial one.
+        _latestGameState = map;
         if (!_gameStarted && mounted) {
           _gameStarted = true;
           // Don't cancel _sub here — let dispose() do it after
@@ -156,7 +162,7 @@ class _LobbyScreenState extends State<LobbyScreen>
                   socket: socket,
                   messageStream: msgStream,
                   myPlayerId: myPlayerId,
-                  initialState: map,
+                  initialState: _latestGameState,
                 ),
               ),
             );

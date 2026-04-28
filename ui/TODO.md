@@ -54,26 +54,26 @@
 
 ## PR5 — Лог действий
 
-- [ ] Структура `_LogEntry { timestamp, actorNickname, type, cards }`.
-- [ ] Diff между предыдущим и новым `game_state` → запись действий («атаковал ♥7», «отбил ♣9», «взял», «бито», «перевёл»).
-- [ ] Свёрнутая полоска над рукой с последним действием.
-- [ ] `BottomSheet` со всей историей текущей партии по тапу.
-- [ ] Очистка лога при старте новой партии.
+- [x] Структура `_LogEntry { timestamp, actorNickname, type, cards }`.
+- [x] Diff между предыдущим и новым `game_state` → запись действий («атаковал ♥7», «отбил ♣9», «взял», «бито», «перевёл»).
+- [x] Свёрнутая полоска над рукой с последним действием.
+- [x] `BottomSheet` со всей историей текущей партии по тапу.
+- [x] Очистка лога при старте новой партии.
 
 ## PR6 — Анимации
 
-- [ ] Виджет `_CardOverlay`: `Stack` поверх всего экрана, `AnimatedPositioned` карт по `card.id`.
-- [ ] `GlobalKey` на якоря: углы колоды/биты, посадки игроков, слоты в руке.
-- [ ] Helper `Offset _anchorOf(GlobalKey)` через `RenderBox.localToGlobal`.
-- [ ] Diff `game_state` → последовательность анимаций:
-  - [ ] раздача (deck → hands),
-  - [ ] атака/подкид (hand → table),
-  - [ ] защита (hand → table со смещением),
-  - [ ] взять (table → hand),
-  - [ ] бито (table → discard corner),
-  - [ ] добор (deck → hand по одной).
-- [ ] Длительность 200 мс/карта, overlap 50 мс.
-- [ ] Блокировать ввод во время анимации.
+- [x] Виджет `_buildCardOverlay`: `Stack` поверх всего экрана, `TweenAnimationBuilder<Offset>` карт по `_FlyingCard.id`.
+- [x] `GlobalKey` на якоря: углы колоды/биты, посадки игроков, рука.
+- [x] Helper `Offset _anchorOf(GlobalKey)` через `RenderBox.localToGlobal` / `globalToLocal`.
+- [x] Diff `game_state` → последовательность анимаций:
+  - [x] раздача (deck → hands),
+  - [x] атака/подкид (hand → table),
+  - [x] защита (hand → table со смещением),
+  - [x] взять (table → hand),
+  - [x] бито (table → discard corner),
+  - [x] добор (deck → hand по одной).
+- [x] Длительность 200 мс/карта, overlap 50 мс.
+- [x] Блокировать ввод во время анимации.
 
 ## PR7 — Жест swipe-up
 
