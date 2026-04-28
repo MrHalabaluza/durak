@@ -293,10 +293,13 @@ class Game {
 
     // Hand-size check is skipped in taking phase — defender takes everything.
     if (state.phase != GamePhase.taking) {
-      final undefendedAfter =
-          state.table.entries.where((e) => e.isUndefended).length + cards.length;
+      final uncoveredNow = state.table.entries.where((e) => e.isUndefended).length;
       _require(
-        undefendedAfter <= state.defender.handSize,
+        uncoveredNow + cards.length <= player.handSize,
+        'Cannot add cards: uncovered cards on table would reach or exceed your hand size',
+      );
+      _require(
+        uncoveredNow + cards.length <= state.defender.handSize,
         'Defender does not have enough cards to cover',
       );
     }
@@ -377,9 +380,10 @@ class Game {
   /// Ends the turn immediately if no eligible player has cards to add.
   void _checkAutoEndTurn() {
     if (state.phase != GamePhase.adding) return;
+    final uncoveredNow = state.table.entries.where((e) => e.isUndefended).length;
     final anyCanAdd = _addingPlayerIds().any((id) {
       final p = state.players.firstWhere((p) => p.id == id);
-      return !p.hasLeft && p.hasCards;
+      return !p.hasLeft && p.hasCards && uncoveredNow < p.handSize;
     });
     if (!anyCanAdd) _endTurnSuccess();
   }
