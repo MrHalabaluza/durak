@@ -221,10 +221,46 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     WidgetsBinding.instance.addObserver(this);
     SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     if (widget.initialState != null) {
-      _gs = _RemoteGS.fromJson(widget.initialState!);
+      final next = _RemoteGS.fromJson(widget.initialState!);
+      _gs = next;
+      if (next.players.any((p) => p.handSize > 0)) {
+        final prev = _preDealState(next);
+        _animating = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            _animateChanges(prev, next,
+                step: const Duration(milliseconds: 40));
+          }
+        });
+      }
     }
     _sub = widget.messageStream
         .listen(_onData, onDone: _onDone, onError: _onError);
+  }
+
+  /// Синтезирует пре-раздачное состояние: пустые руки, полная колода,
+  /// пустой стол и бита. Нужно как `prev` для анимации первой раздачи.
+  static _RemoteGS _preDealState(_RemoteGS next) {
+    final inHands = next.players.fold<int>(0, (s, p) => s + p.handSize);
+    final onTable = next.table
+        .fold<int>(0, (s, e) => s + 1 + (e.defense != null ? 1 : 0));
+    return _RemoteGS(
+      phase: next.phase,
+      trump: next.trump,
+      trumpCard: next.trumpCard,
+      deckSize: next.deckSize + inHands + next.discardSize + onTable,
+      discardSize: 0,
+      attackerIndex: next.attackerIndex,
+      defenderIndex: next.defenderIndex,
+      currentAdderIndex: next.currentAdderIndex,
+      addingPlayerIds: const [],
+      hand: const [],
+      players: next.players
+          .map((p) => _RemotePlayer(p.id, p.nickname, 0, p.hasLeft))
+          .toList(),
+      table: const [],
+      loserId: null,
+    );
   }
 
   @override
@@ -419,8 +455,11 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
 
   /// Вычисляет diff между [prev] и [next] и запускает _fly() для каждой карты.
   /// Вызывается из postFrameCallback (GlobalKeys уже привязаны к новому layout).
-  void _animateChanges(_RemoteGS prev, _RemoteGS next) {
-    const step = Duration(milliseconds: 150);
+  /// [step] — задержка между запусками соседних карт; для раздачи имеет смысл
+  /// сделать заметно меньше дефолта, иначе при 4–6 игроках вся последовательность
+  /// растянется на 5+ секунд.
+  void _animateChanges(_RemoteGS prev, _RemoteGS next,
+      {Duration step = const Duration(milliseconds: 150)}) {
     int seq = 0;
 
     final myIndex = next.players.indexWhere((p) => p.id == widget.myPlayerId);
