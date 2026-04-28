@@ -463,12 +463,19 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
         ));
         if (cid != null) _hiddenCardIds.add(cid);
       });
-      Future.delayed(duration, () {
+      // Запускаем таймер удаления только ПОСЛЕ первого кадра твина —
+      // иначе Future.delayed(duration) начался бы примерно на ~16 мс
+      // раньше первого кадра анимации и карта снималась бы до того,
+      // как доедет до to.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        setState(() {
-          _flying.removeWhere((f) => f.id == id);
-          if (cid != null) _hiddenCardIds.remove(cid);
-          if (_flying.isEmpty) _animating = false;
+        Future.delayed(duration, () {
+          if (!mounted) return;
+          setState(() {
+            _flying.removeWhere((f) => f.id == id);
+            if (cid != null) _hiddenCardIds.remove(cid);
+            if (_flying.isEmpty) _animating = false;
+          });
         });
       });
     });
