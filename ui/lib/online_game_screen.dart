@@ -693,10 +693,22 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
 
     // DEAL / REFILL: колода → руки
     if (next.deckSize < prev.deckSize) {
+      // При взятии карты стола уже анимированы блоком TAKE — исключаем их,
+      // чтобы не анимировать повторно как добор из колоды.
+      final isTake = prev.table.isNotEmpty &&
+          next.table.isEmpty &&
+          next.discardSize == prev.discardSize;
+      final takenIds = isTake
+          ? prev.table
+              .expand<Card>((e) => [e.attack, if (e.defense != null) e.defense!])
+              .map(cardDisplayId)
+              .toSet()
+          : const <int>{};
+
       final prevHandIds = prev.hand.map(cardDisplayId).toSet();
       for (final card in next.hand) {
         final id = cardDisplayId(card);
-        if (!prevHandIds.contains(id)) {
+        if (!prevHandIds.contains(id) && !takenIds.contains(id)) {
           _fly(card: card, faceUp: true,
               from: deckPos, to: handSlotPos(id),
               startDelay: step * seq++);
@@ -704,7 +716,9 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
       }
       for (int i = 0; i < next.players.length; i++) {
         if (i == myIndex) continue;
-        final delta = next.players[i].handSize - prev.players[i].handSize;
+        final rawDelta = next.players[i].handSize - prev.players[i].handSize;
+        final tableOffset = isTake && i == prev.defenderIndex ? takenIds.length : 0;
+        final delta = rawDelta - tableOffset;
         for (int k = 0; k < delta; k++) {
           _fly(card: null, faceUp: false, from: deckPos, to: seatPos(i),
               startDelay: step * seq++);
