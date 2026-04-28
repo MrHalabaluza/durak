@@ -370,7 +370,8 @@ class Game {
     _require(playerId == state.defender.id, 'Only the defender can take');
 
     state.passedPlayers.clear();
-    state.currentAdderIndex = state.attackerIndex;
+    // currentAdderIndex already points to whoever last placed attack cards —
+    // they go first when the defender takes.
     state.phase = GamePhase.taking;
     _checkAutoEndTake();
   }
