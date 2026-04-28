@@ -642,7 +642,10 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
       }
     }
 
-    // ATTACK / ADD_ATTACK (только если не было transfer)
+    // ATTACK / ADD_ATTACK (только если не было transfer).
+    // Инвариант: addAttack в logic/game.dart не меняет currentAdderIndex,
+    // pass меняет, но карт на столе не добавляет. Значит prev.currentAdderIndex
+    // в этой ветке — игрок, который только что подкинул карту.
     if (prev.defenderIndex == next.defenderIndex) {
       for (final card in nextAttacks.difference(prevAttacks)) {
         final srcIndex =
