@@ -208,7 +208,13 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
   final _handKey    = GlobalKey();
   final _overlayKey = GlobalKey();
   // один ключ на слот игрока (по playerIndex, 0..5)
-  final _seatKeys   = List.generate(6, (_) => GlobalKey());
+  final _seatKeys      = List.generate(6, (_) => GlobalKey());
+  // ключи на каждую из 9 ячеек грида стола (по индексу 0..8)
+  final _tableCellKeys = List.generate(9, (_) => GlobalKey());
+  // ключи на конкретные слоты руки (по displayId карты, лениво)
+  final Map<int, GlobalKey> _handSlotKeys = {};
+  GlobalKey _handSlotKey(int displayId) =>
+      _handSlotKeys.putIfAbsent(displayId, () => GlobalKey());
 
   // Overlay-анимация
   final _flying     = <_FlyingCard>[];
@@ -294,6 +300,27 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
       final prev = _gs;
       final next = _RemoteGS.fromJson(map);
       if (prev != null) _diffAndLog(prev, next);
+
+      // Снимок позиций уходящих карт ДО setState — после применения next
+      // соответствующие слоты руки/ячейки могут исчезнуть из layout
+      // (карта сыграна, стол очищен и т.п.), и якорь будет недоступен.
+      final prevHandPositions = <int, Offset>{};
+      final prevTableCellPositions = <int, Offset>{};
+      if (prev != null) {
+        for (final card in prev.hand) {
+          final id = cardDisplayId(card);
+          final key = _handSlotKeys[id];
+          if (key?.currentContext != null) {
+            prevHandPositions[id] = _anchorOf(key!);
+          }
+        }
+        for (int i = 0;
+            i < prev.table.length && i < _tableCellKeys.length;
+            i++) {
+          prevTableCellPositions[i] = _anchorOf(_tableCellKeys[i]);
+        }
+      }
+
       setState(() {
         _gs = next;
         _selectedCardIds.clear();
@@ -304,7 +331,11 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
         // Флаг устанавливается до postFrameCallback, чтобы build уже видел его
         _animating = true;
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _animateChanges(prev, next);
+          if (mounted) {
+            _animateChanges(prev, next,
+                prevHandPositions: prevHandPositions,
+                prevTableCellPositions: prevTableCellPositions);
+          }
         });
       }
     } else if (type == 'error') {
@@ -466,8 +497,13 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
   /// [step] — задержка между запусками соседних карт; для раздачи имеет смысл
   /// сделать заметно меньше дефолта, иначе при 4–6 игроках вся последовательность
   /// растянется на 5+ секунд.
+  /// [prevHandPositions] / [prevTableCellPositions] — снапшоты позиций
+  /// уходящих карт, снятые ДО `setState(_gs = next)`. После применения next
+  /// слоты могут исчезнуть из layout, и якорь возвращает Offset.zero.
   void _animateChanges(_RemoteGS prev, _RemoteGS next,
-      {Duration step = const Duration(milliseconds: 150)}) {
+      {Duration step = const Duration(milliseconds: 150),
+      Map<int, Offset> prevHandPositions = const {},
+      Map<int, Offset> prevTableCellPositions = const {}}) {
     int seq = 0;
 
     final myIndex = next.players.indexWhere((p) => p.id == widget.myPlayerId);
@@ -477,7 +513,44 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     final handPos    = _anchorOf(_handKey);
 
     Offset seatPos(int pi) => _anchorOf(_seatKeys[pi]);
-    Offset srcFor(int pi) => pi == myIndex ? handPos : seatPos(pi);
+
+    /// Текущая позиция слота руки (для целей DEAL/TAKE-в-мою-руку).
+    /// Если слот не смонтирован (карта была скрыта или ещё не появилась),
+    /// fallback на общий handPos.
+    Offset handSlotPos(int displayId) {
+      final key = _handSlotKeys[displayId];
+      if (key?.currentContext != null) {
+        final p = _anchorOf(key!);
+        if (p != Offset.zero) return p;
+      }
+      return handPos;
+    }
+
+    /// Источник для карты, уходящей из руки конкретного игрока.
+    /// Если это я и снапшот есть — точка слота из prev; иначе — seat/hand.
+    Offset srcFromPlayer(Card card, int pi) {
+      if (pi == myIndex) {
+        final p = prevHandPositions[cardDisplayId(card)];
+        if (p != null) return p;
+        return handPos;
+      }
+      return seatPos(pi);
+    }
+
+    /// Источник для карты, уходящей из ячейки стола в prev.
+    Offset prevTableSrc(int prevIdx, {Offset shift = Offset.zero}) =>
+        (prevTableCellPositions[prevIdx] ?? tablePos) + shift;
+
+    /// Цель — конкретная ячейка стола, где карта живёт в next.
+    Offset tableDest(Card card, {Offset shift = Offset.zero}) {
+      final i = next.table.indexWhere(
+          (e) => e.attack == card || e.defense == card);
+      if (i >= 0 && i < _tableCellKeys.length) {
+        final p = _anchorOf(_tableCellKeys[i]);
+        if (p != Offset.zero) return p + shift;
+      }
+      return tablePos + shift;
+    }
 
     final prevAttacks = prev.table.map((e) => e.attack).toSet();
     final nextAttacks = next.table.map((e) => e.attack).toSet();
@@ -486,12 +559,15 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     if (prev.table.isNotEmpty &&
         next.table.isEmpty &&
         next.discardSize > prev.discardSize) {
-      for (final e in prev.table) {
-        _fly(card: e.attack, faceUp: true, from: tablePos, to: discardPos,
+      for (int i = 0; i < prev.table.length; i++) {
+        final e = prev.table[i];
+        _fly(card: e.attack, faceUp: true,
+            from: prevTableSrc(i), to: discardPos,
             startDelay: step * seq++);
         if (e.defense != null) {
           _fly(card: e.defense, faceUp: true,
-              from: tablePos + const Offset(16, 16), to: discardPos,
+              from: prevTableSrc(i, shift: const Offset(16, 16)),
+              to: discardPos,
               startDelay: step * seq++);
         }
       }
@@ -502,13 +578,16 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
         next.table.isEmpty &&
         next.discardSize == prev.discardSize) {
       final isMine = prev.defenderIndex == myIndex;
-      final dest = srcFor(prev.defenderIndex);
-      for (final e in prev.table) {
-        _fly(card: e.attack, faceUp: isMine, from: tablePos, to: dest,
+      final dest = isMine ? handPos : seatPos(prev.defenderIndex);
+      for (int i = 0; i < prev.table.length; i++) {
+        final e = prev.table[i];
+        _fly(card: e.attack, faceUp: isMine,
+            from: prevTableSrc(i), to: dest,
             startDelay: step * seq++);
         if (e.defense != null) {
           _fly(card: e.defense, faceUp: isMine,
-              from: tablePos + const Offset(16, 16), to: dest,
+              from: prevTableSrc(i, shift: const Offset(16, 16)),
+              to: dest,
               startDelay: step * seq++);
         }
       }
@@ -518,7 +597,8 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     if (prev.defenderIndex != next.defenderIndex && prev.table.isNotEmpty) {
       for (final card in nextAttacks.difference(prevAttacks)) {
         _fly(card: card, faceUp: true,
-            from: srcFor(prev.defenderIndex), to: tablePos,
+            from: srcFromPlayer(card, prev.defenderIndex),
+            to: tableDest(card),
             startDelay: step * seq++);
       }
     }
@@ -529,7 +609,8 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
         final srcIndex =
             prev.table.isEmpty ? next.attackerIndex : prev.currentAdderIndex;
         _fly(card: card, faceUp: true,
-            from: srcFor(srcIndex), to: tablePos,
+            from: srcFromPlayer(card, srcIndex),
+            to: tableDest(card),
             startDelay: step * seq++);
       }
     }
@@ -540,8 +621,8 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
       final pe = prev.table.where((e) => e.attack == ne.attack).firstOrNull;
       if (pe != null && pe.defense == null) {
         _fly(card: ne.defense, faceUp: true,
-            from: srcFor(prev.defenderIndex),
-            to: tablePos + const Offset(16, 16),
+            from: srcFromPlayer(ne.defense!, prev.defenderIndex),
+            to: tableDest(ne.defense!, shift: const Offset(16, 16)),
             startDelay: step * seq++);
       }
     }
@@ -550,8 +631,10 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     if (next.deckSize < prev.deckSize) {
       final prevHandIds = prev.hand.map(cardDisplayId).toSet();
       for (final card in next.hand) {
-        if (!prevHandIds.contains(cardDisplayId(card))) {
-          _fly(card: card, faceUp: true, from: deckPos, to: handPos,
+        final id = cardDisplayId(card);
+        if (!prevHandIds.contains(id)) {
+          _fly(card: card, faceUp: true,
+              from: deckPos, to: handSlotPos(id),
               startDelay: step * seq++);
         }
       }
@@ -1094,6 +1177,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
                   Padding(
                     padding: const EdgeInsets.all(4),
                     child: SizedBox(
+                      key: _tableCellKeys[row * 3 + col],
                       width: 72,
                       height: 96,
                       child: _tableCell(gs, row * 3 + col),
@@ -1200,9 +1284,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
         child: const Text('Нет карт', style: TextStyle(color: Colors.grey)),
       );
     }
-    final sorted = sortHand(gs.hand, gs.trump)
-        .where((c) => !_hiddenCardIds.contains(cardDisplayId(c)))
-        .toList();
+    final sorted = sortHand(gs.hand, gs.trump);
     return SingleChildScrollView(
       key: _handKey,
       scrollDirection: Axis.horizontal,
@@ -1211,31 +1293,38 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
         children: [
           for (final card in sorted)
             Padding(
+              key: _handSlotKey(cardDisplayId(card)),
               padding: const EdgeInsets.only(right: 6),
-              child: Draggable<int>(
-                data: cardDisplayId(card),
-                feedback: Material(
-                  color: Colors.transparent,
-                  child: Transform.scale(
-                    scale: 1.1,
-                    child: CardWidget(card: card, selected: true),
+              child: Visibility(
+                visible: !_hiddenCardIds.contains(cardDisplayId(card)),
+                maintainSize: true,
+                maintainAnimation: true,
+                maintainState: true,
+                child: Draggable<int>(
+                  data: cardDisplayId(card),
+                  feedback: Material(
+                    color: Colors.transparent,
+                    child: Transform.scale(
+                      scale: 1.1,
+                      child: CardWidget(card: card, selected: true),
+                    ),
                   ),
-                ),
-                childWhenDragging: Opacity(
-                  opacity: 0.35,
-                  child: CardWidget(card: card),
-                ),
-                child: CardWidget(
-                  card: card,
-                  selected: _selectedCardIds.contains(cardDisplayId(card)),
-                  onTap: _animating ? null : () => setState(() {
-                    final id = cardDisplayId(card);
-                    if (_selectedCardIds.contains(id)) {
-                      _selectedCardIds.remove(id);
-                    } else {
-                      _selectedCardIds.add(id);
-                    }
-                  }),
+                  childWhenDragging: Opacity(
+                    opacity: 0.35,
+                    child: CardWidget(card: card),
+                  ),
+                  child: CardWidget(
+                    card: card,
+                    selected: _selectedCardIds.contains(cardDisplayId(card)),
+                    onTap: _animating ? null : () => setState(() {
+                      final id = cardDisplayId(card);
+                      if (_selectedCardIds.contains(id)) {
+                        _selectedCardIds.remove(id);
+                      } else {
+                        _selectedCardIds.add(id);
+                      }
+                    }),
+                  ),
                 ),
               ),
             ),
