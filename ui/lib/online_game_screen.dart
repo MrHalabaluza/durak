@@ -593,12 +593,44 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
       }
     }
 
-    // TRANSFER: карта(ы) от бывшего отбивающегося на стол
+    // TRANSFER / TRANSIT: защитник сменился по ходу
     if (prev.defenderIndex != next.defenderIndex && prev.table.isNotEmpty) {
-      for (final card in nextAttacks.difference(prevAttacks)) {
-        _fly(card: card, faceUp: true,
-            from: srcFromPlayer(card, prev.defenderIndex),
-            to: tableDest(card),
+      final newCards = nextAttacks.difference(prevAttacks);
+      if (newCards.isNotEmpty) {
+        // TRANSFER: новая карта(ы) кладётся на стол
+        for (final card in newCards) {
+          _fly(card: card, faceUp: true,
+              from: srcFromPlayer(card, prev.defenderIndex),
+              to: tableDest(card),
+              startDelay: step * seq++);
+        }
+      } else {
+        // TRANSIT: козырь нужного ранга показан и остаётся в руке.
+        // Визуально — карта вылетает из руки/посадки бывшего защитника
+        // в сторону нового и исчезает; в статике она вернётся в руку,
+        // т.к. _hiddenCardIds сбросится по завершении полёта.
+        final fromIdx = prev.defenderIndex;
+        final toIdx = next.defenderIndex;
+        final from = fromIdx == myIndex ? handPos : seatPos(fromIdx);
+        final to = toIdx == myIndex ? handPos : seatPos(toIdx);
+
+        Card? showCard;
+        bool faceUp = false;
+        if (fromIdx == myIndex) {
+          final uncoveredRanks = next.table
+              .where((e) => e.defense == null)
+              .map((e) => e.attack.rank)
+              .toSet();
+          showCard = next.hand
+              .where((c) =>
+                  c.suit == next.trump && uncoveredRanks.contains(c.rank))
+              .firstOrNull;
+          faceUp = showCard != null;
+        }
+
+        _fly(card: showCard, faceUp: faceUp,
+            from: from, to: to,
+            duration: const Duration(milliseconds: 300),
             startDelay: step * seq++);
       }
     }
