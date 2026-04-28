@@ -214,6 +214,9 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
   final _flying     = <_FlyingCard>[];
   int  _nextFlyId   = 0;
   bool _animating   = false;
+  // displayId карт, которые сейчас в полёте — статичный слой их скрывает,
+  // чтобы карта не была одновременно видна и в overlay, и в hand/table.
+  final Set<int> _hiddenCardIds = {};
 
   @override
   void initState() {
@@ -417,18 +420,23 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     Future.delayed(startDelay, () {
       if (!mounted) return;
       final id = _nextFlyId++;
-      setState(() => _flying.add(_FlyingCard(
-            id: id,
-            card: card,
-            faceUp: faceUp,
-            from: from,
-            to: to,
-            duration: duration,
-          )));
+      final cid = card != null ? cardDisplayId(card) : null;
+      setState(() {
+        _flying.add(_FlyingCard(
+          id: id,
+          card: card,
+          faceUp: faceUp,
+          from: from,
+          to: to,
+          duration: duration,
+        ));
+        if (cid != null) _hiddenCardIds.add(cid);
+      });
       Future.delayed(duration, () {
         if (!mounted) return;
         setState(() {
           _flying.removeWhere((f) => f.id == id);
+          if (cid != null) _hiddenCardIds.remove(cid);
           if (_flying.isEmpty) _animating = false;
         });
       });
@@ -1098,9 +1106,14 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     );
   }
 
-  Widget _tableCell(_RemoteGS gs, int i) => i < gs.table.length
-      ? _buildTableEntry(gs.table[i], gs)
-      : _buildEmptyTableCell(gs);
+  Widget _tableCell(_RemoteGS gs, int i) {
+    if (i >= gs.table.length) return _buildEmptyTableCell(gs);
+    final entry = gs.table[i];
+    if (_hiddenCardIds.contains(cardDisplayId(entry.attack))) {
+      return _buildEmptyTableCell(gs);
+    }
+    return _buildTableEntry(entry, gs);
+  }
 
   Widget _buildEmptyTableCell(_RemoteGS gs) {
     final isTransfer = _imDefender && gs.phase == GamePhase.defending;
@@ -1163,7 +1176,8 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
                   selected: isSelected || hovering,
                   highlighted: canDefend && !isSelected && !hovering,
                 ),
-                if (entry.defense != null)
+                if (entry.defense != null &&
+                    !_hiddenCardIds.contains(cardDisplayId(entry.defense!)))
                   Positioned(
                     top: 16,
                     left: 16,
@@ -1186,7 +1200,9 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
         child: const Text('Нет карт', style: TextStyle(color: Colors.grey)),
       );
     }
-    final sorted = sortHand(gs.hand, gs.trump);
+    final sorted = sortHand(gs.hand, gs.trump)
+        .where((c) => !_hiddenCardIds.contains(cardDisplayId(c)))
+        .toList();
     return SingleChildScrollView(
       key: _handKey,
       scrollDirection: Axis.horizontal,
