@@ -1,0 +1,4 @@
+{
+  // Показывать web-server устройство в списке (не только remote/cloud IDE)
+  "dart.flutterShowWebServerDevice": "always"
+}

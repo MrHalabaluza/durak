@@ -30,6 +30,24 @@
       "presentation": { "reveal": "always", "panel": "shared" }
     },
     {
+      "label": "firefox: 1 client",
+      "type": "shell",
+      "command": "firefox --new-window http://localhost:7001",
+      "presentation": { "reveal": "never" }
+    },
+    {
+      "label": "firefox: 2 clients",
+      "type": "shell",
+      "command": "firefox --new-window http://localhost:7001 --new-tab http://localhost:7002",
+      "presentation": { "reveal": "never" }
+    },
+    {
+      "label": "firefox: 3 clients",
+      "type": "shell",
+      "command": "firefox --new-window http://localhost:7001 --new-tab http://localhost:7002 --new-tab http://localhost:7003",
+      "presentation": { "reveal": "never" }
+    },
+    {
       "label": "deploy: remote",
       "type": "shell",
       "command": "${workspaceFolder}/scripts/deploy.sh",
