@@ -1334,6 +1334,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
                 maintainState: true,
                 child: Draggable<int>(
                   data: cardDisplayId(card),
+                  maxSimultaneousDrags: _animating ? 0 : 1,
                   feedback: Material(
                     color: Colors.transparent,
                     child: Transform.scale(
