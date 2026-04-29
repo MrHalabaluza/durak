@@ -33,11 +33,29 @@ PORT=9000 dart run bin/server.dart # другой порт
 
 ### Docker
 
-```bash
-# сборка (из корня репо)
-docker build -f server/Dockerfile -t durak-server .
+Готовый multi-arch образ (linux/amd64, linux/arm64) публикуется в GHCR при каждом релизе:
 
-# запуск
+```bash
+# скачать конкретную версию
+docker pull ghcr.io/mrhalabaluza/durak-server:v1.0.0
+
+# скачать последнюю версию
+docker pull ghcr.io/mrhalabaluza/durak-server:latest
+
+# запустить
+docker run -d -p 8080:8080 ghcr.io/mrhalabaluza/durak-server:latest
+
+# другой порт (PORT внутри контейнера тоже нужно переопределить)
+docker run -d -p 9000:9000 -e PORT=9000 ghcr.io/mrhalabaluza/durak-server:latest
+```
+
+Все доступные теги: [ghcr.io/mrhalabaluza/durak-server](https://github.com/MrHalabaluza/durak/pkgs/container/durak-server)
+
+#### Сборка образа вручную
+
+```bash
+# из корня репо
+docker build -f server/Dockerfile -t durak-server .
 docker run -p 8080:8080 durak-server
 ```
 
