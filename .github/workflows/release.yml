@@ -52,7 +52,7 @@ jobs:
       - name: Restore keystore
         env:
           KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-        run: echo "$KS_B64" | base64 -d > ui/android/upload-keystore.jks
+        run: echo "$KS_B64" | base64 -d > ui/android/app/upload-keystore.jks
       - name: Create key.properties
         env:
           STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
