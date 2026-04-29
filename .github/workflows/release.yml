@@ -203,6 +203,8 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set image name
+        run: echo "IMAGE=ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/durak-server" >> "$GITHUB_ENV"
       - name: Build & push server image
         uses: docker/build-push-action@v6
         with:
@@ -211,8 +213,8 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner | lower }}/durak-server:${{ needs.prepare.outputs.version }}
-            ghcr.io/${{ github.repository_owner | lower }}/durak-server:latest
+            ${{ env.IMAGE }}:${{ needs.prepare.outputs.version }}
+            ${{ env.IMAGE }}:latest
 
   release:
     runs-on: ubuntu-latest
