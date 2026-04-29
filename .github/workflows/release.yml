@@ -52,7 +52,17 @@ jobs:
       - name: Restore keystore
         env:
           KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-        run: echo "$KS_B64" | base64 -d > ui/android/app/upload-keystore.jks
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          echo "$KS_B64" | base64 -d > ui/android/app/upload-keystore.jks
+          keytool -importkeystore \
+            -srckeystore  ui/android/app/upload-keystore.jks \
+            -destkeystore ui/android/app/upload-keystore-legacy.jks \
+            -srcstoretype PKCS12 -deststoretype PKCS12 \
+            -srcstorepass "${STORE_PASSWORD}" -deststorepass "${STORE_PASSWORD}" \
+            -noprompt -J-Dkeystore.pkcs12.legacy
+          mv ui/android/app/upload-keystore-legacy.jks \
+             ui/android/app/upload-keystore.jks
       - name: Create key.properties
         env:
           STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
