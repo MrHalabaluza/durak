@@ -823,19 +823,6 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
 
   void _take() => _doAction({'type': 'take'});
 
-  void _swipeUpCard(_RemoteGS gs, Card card) {
-    final id = cardDisplayId(card);
-    final isTransfer = _imDefender && gs.phase == GamePhase.defending;
-    final canAttack = _imAttacker && gs.phase == GamePhase.attacking;
-    final canAdd = _canAdd &&
-        (gs.phase == GamePhase.adding || gs.phase == GamePhase.taking);
-    if (isTransfer) {
-      _transferByDrag(gs, id);
-    } else if (canAttack || canAdd) {
-      _attackByDrag(gs, id);
-    }
-  }
-
   Card? _cardByDisplayId(_RemoteGS gs, int displayId) =>
       gs.hand.where((c) => cardDisplayId(c) == displayId).firstOrNull;
 
@@ -1404,15 +1391,9 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
                 maintainSize: true,
                 maintainAnimation: true,
                 maintainState: true,
-                child: GestureDetector(
-                  onVerticalDragEnd: (details) {
-                    final vel = details.primaryVelocity ?? 0;
-                    if (vel < -500 && !_animating) _swipeUpCard(gs, card);
-                  },
-                  child: LongPressDraggable<int>(
+                child: Draggable<int>(
                     data: cardDisplayId(card),
                     maxSimultaneousDrags: _animating ? 0 : 1,
-                    delay: const Duration(milliseconds: 180),
                     feedback: Material(
                       color: Colors.transparent,
                       child: Transform.scale(
@@ -1439,7 +1420,6 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
                   ),
                 ),
               ),
-            ),
         ],
       ),
     );
