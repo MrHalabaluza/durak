@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=DTFool
+GenericName=Durak Card Game
+Comment=Двойной переводной дурак — онлайн карточная игра
+Exec=ui
+Icon=dtfool
+Terminal=false
+Categories=Game;CardGame;

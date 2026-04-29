@@ -1,0 +1,244 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      changelog: ${{ steps.changelog.outputs.changelog }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - name: Build changelog
+        id: changelog
+        run: |
+          PREV=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)
+          if [ -z "$PREV" ]; then
+            CL=$(git log --pretty=format:"- %s" "$GITHUB_REF_NAME")
+          else
+            CL=$(git log --pretty=format:"- %s" "$PREV..$GITHUB_REF_NAME")
+          fi
+          {
+            echo "changelog<<__EOF__"
+            echo "$CL"
+            echo "__EOF__"
+          } >> "$GITHUB_OUTPUT"
+
+  build-android:
+    runs-on: ubuntu-latest
+    needs: prepare
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version-file: .flutter-version
+          channel: stable
+      - name: Restore keystore
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: echo "$KS_B64" | base64 -d > ui/android/upload-keystore.jks
+      - name: Create key.properties
+        env:
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          cat > ui/android/key.properties <<EOF
+          storeFile=upload-keystore.jks
+          storePassword=${STORE_PASSWORD}
+          keyAlias=${KEY_ALIAS}
+          keyPassword=${KEY_PASSWORD}
+          EOF
+      - name: Build APK
+        working-directory: ui
+        run: |
+          flutter pub get
+          flutter build apk --release \
+            --build-name="${{ needs.prepare.outputs.version }}" \
+            --build-number="${{ github.run_number }}"
+      - name: Rename APK
+        run: |
+          mv ui/build/app/outputs/flutter-apk/app-release.apk \
+             "DTFool-${{ needs.prepare.outputs.version }}-android.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: DTFool-*-android.apk
+          if-no-files-found: error
+
+  build-linux:
+    runs-on: ubuntu-latest
+    needs: prepare
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version-file: .flutter-version
+          channel: stable
+      - name: Install Linux build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang cmake ninja-build pkg-config \
+            libgtk-3-dev liblzma-dev libfuse2 imagemagick wget
+      - name: Build Linux bundle
+        working-directory: ui
+        run: |
+          flutter pub get
+          flutter build linux --release \
+            --build-name="${{ needs.prepare.outputs.version }}"
+      - name: Assemble AppDir and AppImage
+        run: |
+          wget -q -O appimagetool \
+            https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+
+          cp -r ui/build/linux/x64/release/bundle/. ui/packaging/AppDir/
+          convert ui/assets/backs/default.png -resize 256x256 \
+            ui/packaging/AppDir/dtfool.png
+
+          ./appimagetool ui/packaging/AppDir \
+            "DTFool-${{ needs.prepare.outputs.version }}-x86_64.AppImage"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-appimage
+          path: DTFool-*-x86_64.AppImage
+          if-no-files-found: error
+
+  build-windows:
+    runs-on: windows-latest
+    needs: prepare
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version-file: .flutter-version
+          channel: stable
+      - name: Build Windows
+        working-directory: ui
+        shell: pwsh
+        run: |
+          flutter pub get
+          flutter build windows --release --build-name="${{ needs.prepare.outputs.version }}"
+      - name: Package portable ZIP
+        shell: pwsh
+        run: |
+          $ver = "${{ needs.prepare.outputs.version }}"
+          $src = "ui/build/windows/x64/runner/Release"
+          $stage = "stage/DTFool"
+          New-Item -ItemType Directory -Path $stage -Force | Out-Null
+          Copy-Item -Path "$src/*" -Destination $stage -Recurse -Force
+          if (Test-Path "$stage/ui.exe") {
+            Rename-Item -Path "$stage/ui.exe" -NewName "DTFool.exe"
+          }
+          Compress-Archive -Path "stage/DTFool" -DestinationPath "DTFool-$ver-windows-x64.zip" -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-zip
+          path: DTFool-*-windows-x64.zip
+          if-no-files-found: error
+
+  build-macos:
+    runs-on: macos-latest
+    needs: prepare
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version-file: .flutter-version
+          channel: stable
+      - name: Build macOS
+        working-directory: ui
+        run: |
+          flutter pub get
+          flutter build macos --release --build-name="${{ needs.prepare.outputs.version }}"
+      - name: Package portable ZIP
+        run: |
+          ver="${{ needs.prepare.outputs.version }}"
+          src="ui/build/macos/Build/Products/Release/ui.app"
+          mkdir -p stage
+          cp -R "$src" "stage/DTFool.app"
+          ditto -c -k --keepParent "stage/DTFool.app" "DTFool-$ver-macos.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-zip
+          path: DTFool-*-macos.zip
+          if-no-files-found: error
+
+  build-server-image:
+    runs-on: ubuntu-latest
+    needs: prepare
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build & push server image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: server/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/durak-server:${{ needs.prepare.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/durak-server:latest
+
+  release:
+    runs-on: ubuntu-latest
+    needs:
+      - prepare
+      - build-android
+      - build-linux
+      - build-windows
+      - build-macos
+      - build-server-image
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: DTFool ${{ needs.prepare.outputs.version }}
+          body: |
+            ## Что нового
+
+            ${{ needs.prepare.outputs.changelog }}
+
+            ## Клиент
+
+            - **Android** — `DTFool-*-android.apk` (установить `adb install` или открыть на устройстве)
+            - **Linux** — `DTFool-*-x86_64.AppImage`: `chmod +x ./DTFool-*.AppImage && ./DTFool-*.AppImage`
+            - **Windows** — `DTFool-*-windows-x64.zip`: распаковать → запустить `DTFool/DTFool.exe`
+            - **macOS** — `DTFool-*-macos.zip`: распаковать → ПКМ→«Открыть» на `DTFool.app` (либо `xattr -dr com.apple.quarantine DTFool.app && open DTFool.app`)
+
+            ## Сервер
+
+            ```
+            docker pull ghcr.io/${{ github.repository_owner }}/durak-server:${{ needs.prepare.outputs.version }}
+            docker run -d -p 8080:8080 ghcr.io/${{ github.repository_owner }}/durak-server:${{ needs.prepare.outputs.version }}
+            ```
+          files: artifacts/*
+          fail_on_unmatched_files: true
