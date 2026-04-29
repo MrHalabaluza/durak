@@ -230,6 +230,7 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
+          pattern: '{android-apk,linux-appimage,windows-zip,macos-zip}'
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
