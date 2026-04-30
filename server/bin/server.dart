@@ -15,6 +15,7 @@ import 'package:durak_server/http/handlers_auth.dart';
 import 'package:durak_server/http/handlers_me.dart';
 import 'package:durak_server/http/handlers_users.dart';
 import 'package:durak_server/http/handlers_stats.dart';
+import 'package:durak_server/http/handlers_avatar.dart';
 
 void main() async {
   final port = int.parse(Platform.environment['PORT'] ?? '8080');
@@ -26,6 +27,8 @@ void main() async {
   final statsDao = StatsDao(db.db);
   final auth = AuthService(userDao, sessionDao);
   RoomManager.init(statsDao);
+  final avatarsDir =
+      Platform.environment['DURAK_AVATARS_DIR'] ?? '/data/avatars';
 
   var total = 0;
 
@@ -36,7 +39,9 @@ void main() async {
     ..add('GET', '/api/me', (r, _) => handleGetMe(r, auth, statsDao))
     ..add('GET', '/api/users/:id', (r, p) => handleGetUser(r, p, userDao, statsDao))
     ..add('GET', '/api/leaderboard', (r, _) => handleLeaderboard(r, statsDao))
-    ..add('GET', '/api/server-stats', (r, _) => handleServerStats(r, statsDao, total));
+    ..add('GET', '/api/server-stats', (r, _) => handleServerStats(r, statsDao, total))
+    ..add('POST', '/api/me/avatar', (r, _) => handleUploadAvatar(r, auth, userDao, avatarsDir))
+    ..add('GET', '/avatars/:filename', (r, p) => handleGetAvatar(r, p, avatarsDir));
 
   final server = await HttpServer.bind(InternetAddress.anyIPv4, port);
   print('DTFool server listening on port $port');
