@@ -12,6 +12,8 @@ import 'package:durak_server/auth/auth_service.dart';
 import 'package:durak_server/http/router.dart';
 import 'package:durak_server/http/handlers_auth.dart';
 import 'package:durak_server/http/handlers_me.dart';
+import 'package:durak_server/http/handlers_users.dart';
+import 'package:durak_server/http/handlers_stats.dart';
 
 // Fast argon2id for tests
 String _hashFast(String hex) {
@@ -129,7 +131,10 @@ void main() {
       ..add('POST', '/api/register', (r, _) => handleRegister(r, auth))
       ..add('POST', '/api/login', (r, _) => handleLogin(r, auth))
       ..add('POST', '/api/logout', (r, _) => handleLogout(r, auth))
-      ..add('GET', '/api/me', (r, _) => handleGetMe(r, auth, statsDao));
+      ..add('GET', '/api/me', (r, _) => handleGetMe(r, auth, statsDao))
+      ..add('GET', '/api/users/:id', (r, p) => handleGetUser(r, p, userDao, statsDao))
+      ..add('GET', '/api/leaderboard', (r, _) => handleLeaderboard(r, statsDao))
+      ..add('GET', '/api/server-stats', (r, _) => handleServerStats(r, statsDao, 0));
 
     server.listen((req) async {
       if (await router.dispatch(req)) return;
@@ -225,5 +230,98 @@ void main() {
 
     final me = await httpGet(client, host, port, '/api/me', token: token);
     expect(me['status'], 401);
+  });
+
+  // --- Шаг 6 ---
+
+  test('GET /api/users/:id → 200 с правильным username', () async {
+    final reg = await httpPost(client, host, port, '/api/register', {
+      'username': 'Alice',
+      'password_hash': clientHash('Alice', 'pass'),
+    });
+    final userId = (reg['body'] as Map)['user']['id'] as int;
+    final res = await httpGet(client, host, port, '/api/users/$userId');
+    expect(res['status'], 200);
+    expect((res['body'] as Map)['user']['username'], 'Alice');
+  });
+
+  test('GET /api/users/9999 → 404', () async {
+    final res = await httpGet(client, host, port, '/api/users/9999');
+    expect(res['status'], 404);
+  });
+
+  test('GET /api/leaderboard?sort=wins → порядок по победам', () async {
+    // Регистрируем трёх пользователей
+    final regA = await httpPost(client, host, port, '/api/register',
+        {'username': 'A', 'password_hash': clientHash('A', 'p')});
+    final regB = await httpPost(client, host, port, '/api/register',
+        {'username': 'B', 'password_hash': clientHash('B', 'p')});
+    await httpPost(client, host, port, '/api/register',
+        {'username': 'C', 'password_hash': clientHash('C', 'p')});
+
+    final aId = (regA['body'] as Map)['user']['id'] as int;
+    final bId = (regB['body'] as Map)['user']['id'] as int;
+
+    // Запись двух партий через DAO напрямую
+    final statsDao2 = StatsDao(appDb.db);
+    statsDao2.recordGame(
+      roomId: 'R1',
+      startedAt: DateTime.now(),
+      finishedAt: DateTime.now(),
+      participantUserIds: [aId, bId],
+      loserUserId: bId,
+    );
+    statsDao2.recordGame(
+      roomId: 'R2',
+      startedAt: DateTime.now(),
+      finishedAt: DateTime.now(),
+      participantUserIds: [aId, bId],
+      loserUserId: bId,
+    );
+
+    final res = await httpGet(
+        client, host, port, '/api/leaderboard?sort=wins&order=desc');
+    expect(res['status'], 200);
+    final items = (res['body'] as Map)['items'] as List;
+    // A (2 победы) должен быть первым
+    expect(items.first['user']['username'], 'A');
+    // C (0 партий) — rank 3 (last)
+    expect((res['body'] as Map)['total'], 3);
+  });
+
+  test('GET /api/leaderboard с невалидным sort → 400', () async {
+    final res = await httpGet(
+        client, host, port, '/api/leaderboard?sort=password%3B%20DROP');
+    expect(res['status'], 400);
+  });
+
+  test('GET /api/server-stats → total_games корректен', () async {
+    final regA = await httpPost(client, host, port, '/api/register',
+        {'username': 'X', 'password_hash': clientHash('X', 'p')});
+    final regB = await httpPost(client, host, port, '/api/register',
+        {'username': 'Y', 'password_hash': clientHash('Y', 'p')});
+
+    final xId = (regA['body'] as Map)['user']['id'] as int;
+    final yId = (regB['body'] as Map)['user']['id'] as int;
+
+    final statsDao2 = StatsDao(appDb.db);
+    statsDao2.recordGame(
+      roomId: 'S1',
+      startedAt: DateTime.now(),
+      finishedAt: DateTime.now(),
+      participantUserIds: [xId, yId],
+      loserUserId: yId,
+    );
+    statsDao2.recordGame(
+      roomId: 'S2',
+      startedAt: DateTime.now(),
+      finishedAt: DateTime.now(),
+      participantUserIds: [xId, yId],
+      loserUserId: null,
+    );
+
+    final res = await httpGet(client, host, port, '/api/server-stats');
+    expect(res['status'], 200);
+    expect((res['body'] as Map)['total_games'], 2);
   });
 }

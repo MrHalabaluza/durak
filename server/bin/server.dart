@@ -13,6 +13,8 @@ import 'package:durak_server/auth/ws_auth.dart';
 import 'package:durak_server/http/router.dart';
 import 'package:durak_server/http/handlers_auth.dart';
 import 'package:durak_server/http/handlers_me.dart';
+import 'package:durak_server/http/handlers_users.dart';
+import 'package:durak_server/http/handlers_stats.dart';
 
 void main() async {
   final port = int.parse(Platform.environment['PORT'] ?? '8080');
@@ -25,16 +27,19 @@ void main() async {
   final auth = AuthService(userDao, sessionDao);
   RoomManager.init(statsDao);
 
+  var total = 0;
+
   final router = Router()
     ..add('POST', '/api/register', (r, _) => handleRegister(r, auth))
     ..add('POST', '/api/login', (r, _) => handleLogin(r, auth))
     ..add('POST', '/api/logout', (r, _) => handleLogout(r, auth))
-    ..add('GET', '/api/me', (r, _) => handleGetMe(r, auth, statsDao));
+    ..add('GET', '/api/me', (r, _) => handleGetMe(r, auth, statsDao))
+    ..add('GET', '/api/users/:id', (r, p) => handleGetUser(r, p, userDao, statsDao))
+    ..add('GET', '/api/leaderboard', (r, _) => handleLeaderboard(r, statsDao))
+    ..add('GET', '/api/server-stats', (r, _) => handleServerStats(r, statsDao, total));
 
   final server = await HttpServer.bind(InternetAddress.anyIPv4, port);
   print('DTFool server listening on port $port');
-
-  var total = 0;
 
   await for (final request in server) {
     if (WebSocketTransformer.isUpgradeRequest(request)) {

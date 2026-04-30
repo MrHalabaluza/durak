@@ -19,11 +19,11 @@ Future<void> handleGetMe(
           user.avatarPath == null ? null : '/${user.avatarPath}',
       'created_at': user.createdAt,
     },
-    'stats': _statsJson(s),
+    'stats': statsJson(s),
   });
 }
 
-Map<String, dynamic> _statsJson(UserStatsRow s) => {
+Map<String, dynamic> statsJson(UserStatsRow s) => {
       'games_played': s.gamesPlayed,
       'wins': s.wins,
       'losses': s.losses,
