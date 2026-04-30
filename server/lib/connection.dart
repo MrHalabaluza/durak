@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
 import 'protocol.dart';
@@ -7,17 +8,25 @@ typedef MessageHandler = void Function(Connection conn, ClientMessage msg);
 typedef CloseHandler = void Function(Connection conn);
 
 class Connection {
-  final String playerId;
-  String nickname = '';
   final WebSocket _socket;
+  String? playerId;
+  String? username;
+  bool authed = false;
   Room? room;
+  String nickname = '';
+  Timer? _authTimer;
 
   Connection({
-    required this.playerId,
     required WebSocket socket,
     required MessageHandler onMessage,
     required CloseHandler onClose,
   }) : _socket = socket {
+    _authTimer = Timer(const Duration(seconds: 5), () {
+      if (!authed) {
+        send(errorMsg('auth_timeout'));
+        close();
+      }
+    });
     socket.listen(
       (data) {
         if (data is! String) return;
@@ -27,10 +36,24 @@ class Connection {
           send(errorMsg('Bad message: $e'));
         }
       },
-      onDone: () => onClose(this),
-      onError: (_) => onClose(this),
+      onDone: () {
+        _authTimer?.cancel();
+        onClose(this);
+      },
+      onError: (_) {
+        _authTimer?.cancel();
+        onClose(this);
+      },
       cancelOnError: false,
     );
+  }
+
+  void markAuthed(int userId, String uname) {
+    _authTimer?.cancel();
+    authed = true;
+    playerId = userId.toString();
+    username = uname;
+    nickname = uname;
   }
 
   void send(Map<String, dynamic> message) {

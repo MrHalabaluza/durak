@@ -5,10 +5,10 @@ import '../room_manager.dart';
 
 void handleLobby(Connection conn, ClientMessage msg) {
   switch (msg) {
-    case CreateRoomMsg(:final nickname):
-      _create(conn, nickname);
-    case JoinRoomMsg(:final roomId, :final nickname):
-      _join(conn, roomId, nickname);
+    case CreateRoomMsg():
+      _create(conn);
+    case JoinRoomMsg(:final roomId):
+      _join(conn, roomId);
     case LeaveRoomMsg():
       _leave(conn);
     case StartGameMsg(:final deckConfig):
@@ -17,19 +17,19 @@ void handleLobby(Connection conn, ClientMessage msg) {
   }
 }
 
-void _create(Connection conn, String nickname) {
+void _create(Connection conn) {
   if (conn.room != null) {
     conn.send(errorMsg('Already in a room'));
     return;
   }
-  conn.nickname = _resolveNickname(nickname, conn.playerId, const []);
+  conn.nickname = conn.username!;
   final room = RoomManager.instance.create();
   room.addPlayer(conn);
-  conn.send(roomJoinedMsg(room.id, conn.playerId));
+  conn.send(roomJoinedMsg(room.id, conn.playerId!));
   conn.send(roomStateMsg(room.id, room.playerEntries, false));
 }
 
-void _join(Connection conn, String roomId, String nickname) {
+void _join(Connection conn, String roomId) {
   if (conn.room != null) {
     conn.send(errorMsg('Already in a room'));
     return;
@@ -39,13 +39,12 @@ void _join(Connection conn, String roomId, String nickname) {
     conn.send(errorMsg('Room not found'));
     return;
   }
-  conn.nickname =
-      _resolveNickname(nickname, conn.playerId, room.playerEntries);
+  conn.nickname = conn.username!;
   if (!room.addPlayer(conn)) {
     conn.send(errorMsg('Cannot join: room is full or game already started'));
     return;
   }
-  conn.send(roomJoinedMsg(room.id, conn.playerId));
+  conn.send(roomJoinedMsg(room.id, conn.playerId!));
   room.broadcast(roomStateMsg(room.id, room.playerEntries, room.isStarted));
 }
 
@@ -59,22 +58,6 @@ void _leave(Connection conn) {
     room.broadcast(
         roomStateMsg(room.id, room.playerEntries, room.isStarted));
   }
-}
-
-/// Returns [desired] if not already taken; otherwise appends `_2`, `_3`, etc.
-String _resolveNickname(
-  String desired,
-  String ownId,
-  List<({String id, String nickname})> existing,
-) {
-  final base = desired.trim().isEmpty ? ownId.substring(0, 6) : desired.trim();
-  final taken = existing.map((e) => e.nickname).toSet();
-  if (!taken.contains(base)) return base;
-  var i = 2;
-  while (taken.contains('${base}_$i')) {
-    i++;
-  }
-  return '${base}_$i';
 }
 
 void _start(Connection conn, DeckConfig? deckConfig) {
