@@ -14,6 +14,7 @@ import 'package:durak_server/http/handlers_auth.dart';
 import 'package:durak_server/http/handlers_me.dart';
 import 'package:durak_server/http/handlers_users.dart';
 import 'package:durak_server/http/handlers_stats.dart';
+import 'package:durak_server/http/handlers_avatar.dart';
 
 // Fast argon2id for tests
 String _hashFast(String hex) {
@@ -107,8 +108,55 @@ Future<Map<String, dynamic>> httpGet(
   final req = await client.get(host, port, path);
   if (token != null) req.headers.set('Authorization', 'Bearer $token');
   final resp = await req.close();
+  final bytes = await resp.fold<List<int>>([], (a, b) => a..addAll(b));
+  String? text;
+  try {
+    text = utf8.decode(bytes);
+  } catch (_) {}
+  dynamic body;
+  if (text != null && text.isNotEmpty) {
+    try {
+      body = jsonDecode(text);
+    } catch (_) {
+      body = text;
+    }
+  }
+  return {'status': resp.statusCode, 'body': body};
+}
+
+Uint8List _buildMultipart(
+    String boundary, String fieldName, String filename, Uint8List fileBytes) {
+  final buf = <int>[];
+  void s(String v) => buf.addAll(v.codeUnits);
+  s('--$boundary\r\n');
+  s('Content-Disposition: form-data; name="$fieldName"; filename="$filename"\r\n');
+  s('Content-Type: application/octet-stream\r\n');
+  s('\r\n');
+  buf.addAll(fileBytes);
+  s('\r\n--$boundary--\r\n');
+  return Uint8List.fromList(buf);
+}
+
+Future<Map<String, dynamic>> httpPostMultipart(
+  HttpClient client,
+  String host,
+  int port,
+  String path,
+  Uint8List body,
+  String boundary, {
+  String? token,
+}) async {
+  final req = await client.post(host, port, path);
+  req.headers.set(
+      'Content-Type', 'multipart/form-data; boundary=$boundary');
+  if (token != null) req.headers.set('Authorization', 'Bearer $token');
+  req.add(body);
+  final resp = await req.close();
   final raw = await utf8.decoder.bind(resp).join();
-  return {'status': resp.statusCode, 'body': raw.isEmpty ? null : jsonDecode(raw)};
+  return {
+    'status': resp.statusCode,
+    'body': raw.isEmpty ? null : jsonDecode(raw),
+  };
 }
 
 void main() {
@@ -116,6 +164,7 @@ void main() {
   late HttpServer server;
   late HttpClient client;
   late int port;
+  late Directory tempAvatarsDir;
 
   setUp(() async {
     appDb = AppDatabase.open(':memory:');
@@ -123,10 +172,13 @@ void main() {
     final sessionDao = SessionDao(appDb.db);
     final statsDao = StatsDao(appDb.db);
     final auth = _FastAuthService(userDao, sessionDao);
+    tempAvatarsDir =
+        Directory.systemTemp.createTempSync('durak_avatars_test_');
 
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     port = server.port;
 
+    final avatarsDir = tempAvatarsDir.path;
     final router = Router()
       ..add('POST', '/api/register', (r, _) => handleRegister(r, auth))
       ..add('POST', '/api/login', (r, _) => handleLogin(r, auth))
@@ -134,7 +186,9 @@ void main() {
       ..add('GET', '/api/me', (r, _) => handleGetMe(r, auth, statsDao))
       ..add('GET', '/api/users/:id', (r, p) => handleGetUser(r, p, userDao, statsDao))
       ..add('GET', '/api/leaderboard', (r, _) => handleLeaderboard(r, statsDao))
-      ..add('GET', '/api/server-stats', (r, _) => handleServerStats(r, statsDao, 0));
+      ..add('GET', '/api/server-stats', (r, _) => handleServerStats(r, statsDao, 0))
+      ..add('POST', '/api/me/avatar', (r, _) => handleUploadAvatar(r, auth, userDao, avatarsDir))
+      ..add('GET', '/avatars/:filename', (r, p) => handleGetAvatar(r, p, avatarsDir));
 
     server.listen((req) async {
       if (await router.dispatch(req)) return;
@@ -150,6 +204,7 @@ void main() {
     client.close();
     await server.close(force: true);
     appDb.close();
+    tempAvatarsDir.deleteSync(recursive: true);
   });
 
   final host = '127.0.0.1';
@@ -323,5 +378,104 @@ void main() {
     final res = await httpGet(client, host, port, '/api/server-stats');
     expect(res['status'], 200);
     expect((res['body'] as Map)['total_games'], 2);
+  });
+
+  // --- Шаг 7: аватарки ---
+
+  Future<String> _registerAndGetToken(String username) async {
+    final reg = await httpPost(client, host, port, '/api/register', {
+      'username': username,
+      'password_hash': clientHash(username, 'pass'),
+    });
+    return (reg['body'] as Map)['token'] as String;
+  }
+
+  // Минимальные magic-байты для каждого формата (+ padding до 12 байт)
+  final pngBytes = Uint8List.fromList(
+      [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0]);
+  final jpegBytes = Uint8List.fromList(
+      [0xFF, 0xD8, 0xFF, 0xE0, 0, 0, 0, 0, 0, 0, 0, 0]);
+  final txtBytes = Uint8List.fromList(
+      'Hello World!'.codeUnits);
+
+  const boundary = 'testboundary123';
+
+  test('POST /api/me/avatar PNG → 200, avatar_url содержит .png', () async {
+    final token = await _registerAndGetToken('ImgUser1');
+    final body = _buildMultipart(boundary, 'file', 'photo.png', pngBytes);
+    final res = await httpPostMultipart(
+        client, host, port, '/api/me/avatar', body, boundary,
+        token: token);
+    expect(res['status'], 200);
+    final url = (res['body'] as Map)['avatar_url'] as String;
+    expect(url, contains('.png'));
+  });
+
+  test('POST /api/me/avatar JPEG magic с именем .png → сохранён как .jpg',
+      () async {
+    final token = await _registerAndGetToken('ImgUser2');
+    final body = _buildMultipart(boundary, 'file', 'photo.png', jpegBytes);
+    final res = await httpPostMultipart(
+        client, host, port, '/api/me/avatar', body, boundary,
+        token: token);
+    expect(res['status'], 200);
+    final url = (res['body'] as Map)['avatar_url'] as String;
+    expect(url, contains('.jpg'));
+  });
+
+  test('POST /api/me/avatar TXT → 415', () async {
+    final token = await _registerAndGetToken('ImgUser3');
+    final body = _buildMultipart(boundary, 'file', 'note.txt', txtBytes);
+    final res = await httpPostMultipart(
+        client, host, port, '/api/me/avatar', body, boundary,
+        token: token);
+    expect(res['status'], 415);
+  });
+
+  test('POST /api/me/avatar >2MB → 413 или closed connection', () async {
+    final token = await _registerAndGetToken('ImgUser4');
+    final bigBytes = Uint8List(3 * 1024 * 1024);
+    final body = _buildMultipart(boundary, 'file', 'big.png', bigBytes);
+    try {
+      final res = await httpPostMultipart(
+          client, host, port, '/api/me/avatar', body, boundary,
+          token: token);
+      // Сервер успел отдать 413 до разрыва соединения
+      expect(res['status'], 413);
+    } on SocketException {
+      // Сервер закрыл соединение при превышении лимита — ожидаемое поведение
+    }
+  });
+
+  test('POST /api/me/avatar без токена → 401', () async {
+    final body = _buildMultipart(boundary, 'file', 'photo.png', pngBytes);
+    final res = await httpPostMultipart(
+        client, host, port, '/api/me/avatar', body, boundary);
+    expect(res['status'], 401);
+  });
+
+  test('GET /avatars/evil..png → 400 (path traversal)', () async {
+    final res = await httpGet(client, host, port, '/avatars/evil..png');
+    expect(res['status'], 400);
+  });
+
+  test('GET /avatars/999.png (нет файла) → 404', () async {
+    final res = await httpGet(client, host, port, '/avatars/999.png');
+    expect(res['status'], 404);
+  });
+
+  test('Загрузка и скачивание аватарки', () async {
+    final token = await _registerAndGetToken('ImgUser5');
+    final uploadBody =
+        _buildMultipart(boundary, 'file', 'avatar.png', pngBytes);
+    final upload = await httpPostMultipart(
+        client, host, port, '/api/me/avatar', uploadBody, boundary,
+        token: token);
+    expect(upload['status'], 200);
+    final avatarUrl = (upload['body'] as Map)['avatar_url'] as String;
+
+    // avatarUrl = '/avatars/{id}.png'
+    final get = await httpGet(client, host, port, avatarUrl);
+    expect(get['status'], 200);
   });
 }
