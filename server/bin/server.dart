@@ -23,6 +23,7 @@ void main() async {
   final sessionDao = SessionDao(db.db);
   final statsDao = StatsDao(db.db);
   final auth = AuthService(userDao, sessionDao);
+  RoomManager.init(statsDao);
 
   final router = Router()
     ..add('POST', '/api/register', (r, _) => handleRegister(r, auth))

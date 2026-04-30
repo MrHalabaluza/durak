@@ -13,6 +13,8 @@ import 'package:durak_server/db/user_dao.dart';
 import 'package:durak_server/db/session_dao.dart';
 import 'package:durak_server/handlers/lobby.dart';
 import 'package:durak_server/handlers/game.dart';
+import 'package:durak_server/room_manager.dart';
+import 'package:durak_server/db/stats_dao.dart';
 
 String _hashFast(String hex) {
   final salt = Uint8List.fromList(List.generate(16, (i) => i));
@@ -131,6 +133,7 @@ void main() {
     final userDao = UserDao(appDb.db);
     final sessionDao = SessionDao(appDb.db);
     auth = _FastAuthService(userDao, sessionDao);
+    RoomManager.init(StatsDao(appDb.db));
 
     final reg = auth.register(
         username: 'TestUser', clientPasswordHash: 'deadbeef' * 8);
