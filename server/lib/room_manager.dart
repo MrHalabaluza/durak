@@ -1,19 +1,26 @@
 import 'dart:math';
 import 'room.dart';
+import 'db/stats_dao.dart';
 
 class RoomManager {
-  static final RoomManager instance = RoomManager._();
-  RoomManager._();
+  static late RoomManager instance;
 
+  static void init(StatsDao stats) {
+    instance = RoomManager._(stats);
+  }
+
+  final StatsDao _stats;
   final Map<String, Room> _rooms = {};
   final Random _rng = Random();
+
+  RoomManager._(this._stats);
 
   Room create() {
     String id;
     do {
       id = _generateId();
     } while (_rooms.containsKey(id));
-    return _rooms[id] = Room(id);
+    return _rooms[id] = Room(id, _stats);
   }
 
   Room? find(String id) => _rooms[id];

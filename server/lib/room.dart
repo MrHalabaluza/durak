@@ -1,13 +1,17 @@
 import 'package:durak_logic/durak_logic.dart';
 import 'connection.dart';
+import 'db/stats_dao.dart';
 import 'protocol.dart';
 
 class Room {
   final String id;
+  final StatsDao _stats;
   final List<Connection> _connections = [];
   Game? _game;
+  DateTime? _startedAt;
+  bool _finishedRecorded = false;
 
-  Room(this.id);
+  Room(this.id, this._stats);
 
   bool get isStarted => _game != null;
   bool get isEmpty => _connections.isEmpty;
@@ -32,14 +36,21 @@ class Room {
 
   bool startGame([DeckConfig? config]) {
     if (isStarted || _connections.length < 2) return false;
+    _startedAt = DateTime.now();
     try {
       _game = Game.start(playerIds, config: config);
     } on GameException catch (e) {
       for (final c in _connections) c.send(errorMsg(e.message));
       return false;
     }
-    _broadcastGameState();
+    broadcastGameState();
     return true;
+  }
+
+  /// For testing: inject a game (e.g. already-finished) and trigger broadcast.
+  void injectGame(Game game, DateTime startedAt) {
+    _game = game;
+    _startedAt = startedAt;
   }
 
   void handleAttack(Connection conn, List<Card> cards) =>
@@ -72,20 +83,35 @@ class Room {
   void _run(Connection conn, void Function() action) {
     try {
       action();
-      _broadcastGameState();
+      broadcastGameState();
     } on GameException catch (e) {
       conn.send(errorMsg(e.message));
     }
   }
 
-  void _broadcastGameState() {
+  void broadcastGameState() {
     final state = _game!.state;
     final addingIds = _game!.addingPlayerIds;
     final nicks = {for (final c in _connections) c.playerId!: c.nickname};
     for (final conn in _connections) {
       conn.send(gameStateMsg(state, conn.playerId!, addingIds, nicks));
     }
-    if (state.phase == GamePhase.finished) {
+    if (state.phase == GamePhase.finished && !_finishedRecorded) {
+      _finishedRecorded = true;
+      try {
+        _stats.recordGame(
+          roomId: id,
+          startedAt: _startedAt!,
+          finishedAt: DateTime.now(),
+          participantUserIds:
+              _connections.map((c) => int.parse(c.playerId!)).toList(),
+          loserUserId:
+              state.loserId == null ? null : int.parse(state.loserId!),
+        );
+      } catch (e, st) {
+        // ignore: avoid_print
+        print('recordGame failed: $e\n$st');
+      }
       broadcast({'type': 'game_over', 'loserId': state.loserId});
     }
   }
