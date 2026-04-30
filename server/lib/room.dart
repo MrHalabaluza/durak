@@ -11,9 +11,10 @@ class Room {
 
   bool get isStarted => _game != null;
   bool get isEmpty => _connections.isEmpty;
-  List<String> get playerIds => _connections.map((c) => c.playerId).toList();
+  List<String> get playerIds =>
+      _connections.map((c) => c.playerId!).toList();
   List<({String id, String nickname})> get playerEntries =>
-      _connections.map((c) => (id: c.playerId, nickname: c.nickname)).toList();
+      _connections.map((c) => (id: c.playerId!, nickname: c.nickname)).toList();
 
   bool addPlayer(Connection conn) {
     if (isStarted || _connections.length >= 6) return false;
@@ -42,25 +43,25 @@ class Room {
   }
 
   void handleAttack(Connection conn, List<Card> cards) =>
-      _run(conn, () => _game!.attack(conn.playerId, cards));
+      _run(conn, () => _game!.attack(conn.playerId!, cards));
 
   void handleDefend(Connection conn, Card attackCard, Card defenseCard) =>
-      _run(conn, () => _game!.defend(conn.playerId, attackCard, defenseCard));
+      _run(conn, () => _game!.defend(conn.playerId!, attackCard, defenseCard));
 
   void handleTransfer(Connection conn, List<Card> cards) =>
-      _run(conn, () => _game!.transfer(conn.playerId, cards));
+      _run(conn, () => _game!.transfer(conn.playerId!, cards));
 
   void handleTransit(Connection conn, Card card) =>
-      _run(conn, () => _game!.transit(conn.playerId, card));
+      _run(conn, () => _game!.transit(conn.playerId!, card));
 
   void handleAddAttack(Connection conn, List<Card> cards) =>
-      _run(conn, () => _game!.addAttack(conn.playerId, cards));
+      _run(conn, () => _game!.addAttack(conn.playerId!, cards));
 
   void handlePass(Connection conn) =>
-      _run(conn, () => _game!.pass(conn.playerId));
+      _run(conn, () => _game!.pass(conn.playerId!));
 
   void handleTake(Connection conn) =>
-      _run(conn, () => _game!.take(conn.playerId));
+      _run(conn, () => _game!.take(conn.playerId!));
 
   void broadcast(Map<String, dynamic> message) {
     for (final conn in _connections) {
@@ -80,9 +81,9 @@ class Room {
   void _broadcastGameState() {
     final state = _game!.state;
     final addingIds = _game!.addingPlayerIds;
-    final nicks = {for (final c in _connections) c.playerId: c.nickname};
+    final nicks = {for (final c in _connections) c.playerId!: c.nickname};
     for (final conn in _connections) {
-      conn.send(gameStateMsg(state, conn.playerId, addingIds, nicks));
+      conn.send(gameStateMsg(state, conn.playerId!, addingIds, nicks));
     }
     if (state.phase == GamePhase.finished) {
       broadcast({'type': 'game_over', 'loserId': state.loserId});

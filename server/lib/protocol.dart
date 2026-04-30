@@ -28,9 +28,15 @@ sealed class ClientMessage {
       'add_attack' => AddAttackMsg(_parseCards(map['cards'] as List)),
       'pass' => const PassMsg(),
       'take' => const TakeMsg(),
+      'auth' => AuthMsg(map['token'] as String),
       final t => throw FormatException('Unknown message type: $t'),
     };
   }
+}
+
+class AuthMsg extends ClientMessage {
+  final String token;
+  const AuthMsg(this.token);
 }
 
 class CreateRoomMsg extends ClientMessage {
@@ -91,6 +97,9 @@ class TakeMsg extends ClientMessage {
 
 Map<String, dynamic> errorMsg(String message) =>
     {'type': 'error', 'message': message};
+
+Map<String, dynamic> authOkMsg(int userId, String username) =>
+    {'type': 'auth_ok', 'userId': userId.toString(), 'username': username};
 
 Map<String, dynamic> roomJoinedMsg(String roomId, String playerId) => {
       'type': 'room_joined',
