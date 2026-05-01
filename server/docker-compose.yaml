@@ -1,0 +1,16 @@
+services:
+  durak:
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
+    ports:
+      - "8080:8080"
+    volumes:
+      - durak-data:/data
+    environment:
+      - PORT=8080
+      - DURAK_DB_PATH=/data/durak.db
+      - DURAK_AVATARS_DIR=/data/avatars
+
+volumes:
+  durak-data:
