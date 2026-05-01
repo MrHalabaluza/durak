@@ -146,6 +146,7 @@ class _LobbyScreenState extends State<LobbyScreen>
                   port: widget.port,
                   tls: widget.tls,
                   token: widget.token,
+                  roomId: _roomId!,
                 ),
               ),
             );

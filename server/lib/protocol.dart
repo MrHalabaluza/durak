@@ -29,6 +29,7 @@ sealed class ClientMessage {
       'pass' => const PassMsg(),
       'take' => const TakeMsg(),
       'auth' => AuthMsg(map['token'] as String),
+      'rejoin_room' => RejoinRoomMsg(map['roomId'] as String),
       final t => throw FormatException('Unknown message type: $t'),
     };
   }
@@ -91,6 +92,11 @@ class PassMsg extends ClientMessage {
 
 class TakeMsg extends ClientMessage {
   const TakeMsg();
+}
+
+class RejoinRoomMsg extends ClientMessage {
+  final String roomId;
+  const RejoinRoomMsg(this.roomId);
 }
 
 // ── Outgoing message builders ───────────────────────────────────────────────

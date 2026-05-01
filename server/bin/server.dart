@@ -55,7 +55,8 @@ void main() async {
           if (msg is CreateRoomMsg ||
               msg is JoinRoomMsg ||
               msg is LeaveRoomMsg ||
-              msg is StartGameMsg) {
+              msg is StartGameMsg ||
+              msg is RejoinRoomMsg) {
             handleLobby(conn, msg);
           } else if (msg is! AuthMsg) {
             handleGame(conn, msg);
@@ -69,10 +70,11 @@ void main() async {
             print('[-] ${conn.playerId ?? '?'}  (active: ${--total})');
             final room = conn.room;
             if (room != null) {
-              room.removePlayer(conn);
+              final wasInGame = room.isStarted;
+              room.removePlayer(conn, disconnected: true);
               if (room.isEmpty) {
                 RoomManager.instance.removeIfEmpty(room.id);
-              } else if (conn.playerId != null) {
+              } else if (!wasInGame && conn.playerId != null) {
                 room.broadcast(
                     {'type': 'player_left', 'playerId': conn.playerId});
               }

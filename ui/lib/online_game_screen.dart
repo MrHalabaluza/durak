@@ -4,6 +4,7 @@ import 'package:flutter/material.dart' hide Card;
 import 'package:flutter/services.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:durak_logic/durak_logic.dart';
+import 'app_settings.dart';
 import 'card_widget.dart';
 import 'lobby_screen.dart';
 import 'sort_hand.dart';
@@ -179,11 +180,12 @@ class OnlineGameScreen extends StatefulWidget {
   /// First game_state received in the lobby — displayed immediately.
   final Map<String, dynamic>? initialState;
 
-  // Server connection params — used to navigate back to lobby after game ends.
+  // Server connection params — used to navigate back to lobby and for reconnect.
   final String host;
   final int port;
   final bool tls;
   final String token;
+  final String roomId;
 
   const OnlineGameScreen({
     super.key,
@@ -195,6 +197,7 @@ class OnlineGameScreen extends StatefulWidget {
     required this.port,
     required this.tls,
     required this.token,
+    required this.roomId,
   });
 
   @override
@@ -203,9 +206,15 @@ class OnlineGameScreen extends StatefulWidget {
 
 class _OnlineGameScreenState extends State<OnlineGameScreen>
     with WidgetsBindingObserver {
+  late WebSocketChannel _socket;
   StreamSubscription? _sub;
   _RemoteGS? _gs;
   String? _error;
+
+  bool _reconnecting = false;
+  int _reconnectAttempts = 0;
+  Timer? _reconnectTimer;
+  static const _maxReconnectAttempts = 8;
 
   final Set<int> _selectedCardIds = {};
   Card? _selectedAttackCard;
@@ -242,6 +251,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
   @override
   void initState() {
     super.initState();
+    _socket = widget.socket;
     WidgetsBinding.instance.addObserver(this);
     SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     if (widget.initialState != null) {
@@ -296,8 +306,9 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
     ]);
+    _reconnectTimer?.cancel();
     _sub?.cancel();
-    widget.socket.sink.close();
+    _socket.sink.close();
     super.dispose();
   }
 
@@ -316,6 +327,47 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
 
   void _onData(Map<String, dynamic> map) {
     final type = map['type'] as String;
+
+    if (_reconnecting) {
+      if (type == 'auth_ok') {
+        _send({'type': 'rejoin_room', 'roomId': widget.roomId});
+        return;
+      }
+      if (type == 'error') {
+        final msg = map['message'] as String;
+        if (msg == 'room_not_found' || msg == 'rejoin_failed' ||
+            msg == 'bad_token' || msg == 'auth_timeout') {
+          if (msg == 'bad_token') AppSettings.clearAuth();
+          if (mounted) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (_) => LobbyScreen(
+                  host: widget.host,
+                  port: widget.port,
+                  tls: widget.tls,
+                  token: widget.token,
+                ),
+              ),
+            );
+          }
+          return;
+        }
+        _scheduleReconnect();
+        return;
+      }
+      if (type == 'game_state') {
+        _reconnectTimer?.cancel();
+        _reconnectTimer = null;
+        setState(() {
+          _reconnecting = false;
+          _reconnectAttempts = 0;
+          _error = null;
+        });
+        // fall through to normal game_state handling
+      }
+    }
+
     if (type == 'game_state') {
       final prev = _gs;
       final next = _RemoteGS.fromJson(map);
@@ -440,15 +492,59 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
   }
 
   void _onDone() {
-    if (mounted) setState(() => _error = 'Соединение разорвано');
+    if (mounted) _startReconnect();
   }
 
-  void _onError(Object e) {
-    if (mounted) setState(() => _error = e.toString());
+  void _onError(Object _) {
+    if (mounted) _startReconnect();
+  }
+
+  void _startReconnect() {
+    if (_reconnecting) return;
+    setState(() => _reconnecting = true);
+    _scheduleReconnect();
+  }
+
+  void _scheduleReconnect() {
+    final delay = _reconnectAttempts == 0
+        ? Duration.zero
+        : Duration(seconds: (1 << (_reconnectAttempts - 1)).clamp(1, 30));
+    _reconnectTimer = Timer(delay, _attemptReconnect);
+  }
+
+  Future<void> _attemptReconnect() async {
+    if (!mounted) return;
+    if (_reconnectAttempts >= _maxReconnectAttempts) {
+      setState(() {
+        _reconnecting = false;
+        _error = 'Не удалось переподключиться';
+      });
+      return;
+    }
+    _reconnectAttempts++;
+    try {
+      final scheme = widget.tls ? 'wss' : 'ws';
+      final ws = WebSocketChannel.connect(
+          Uri.parse('$scheme://${widget.host}:${widget.port}'));
+      await ws.ready;
+      if (!mounted) {
+        ws.sink.close();
+        return;
+      }
+      _sub?.cancel();
+      final stream = ws.stream
+          .map((data) => jsonDecode(data as String) as Map<String, dynamic>)
+          .asBroadcastStream();
+      setState(() => _socket = ws);
+      _sub = stream.listen(_onData, onDone: _onDone, onError: _onError);
+      ws.sink.add(jsonEncode({'type': 'auth', 'token': widget.token}));
+    } catch (_) {
+      if (mounted) _scheduleReconnect();
+    }
   }
 
   void _send(Map<String, dynamic> msg) =>
-      widget.socket.sink.add(jsonEncode(msg));
+      _socket.sink.add(jsonEncode(msg));
 
   // ── Animation ─────────────────────────────────────────────────────────────
 
@@ -1007,7 +1103,40 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
             ),
           ),
           _buildCardOverlay(),
+          if (_reconnecting) _buildReconnectOverlay(),
         ],
+      ),
+    );
+  }
+
+  Widget _buildReconnectOverlay() {
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: Center(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+            decoration: BoxDecoration(
+              color: Colors.black.withAlpha(166),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: 28,
+                  height: 28,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 3, color: Colors.white),
+                ),
+                SizedBox(height: 10),
+                Text(
+                  'Переподключение…',
+                  style: TextStyle(color: Colors.white, fontSize: 14),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

@@ -13,6 +13,8 @@ void handleLobby(Connection conn, ClientMessage msg) {
       _leave(conn);
     case StartGameMsg(:final deckConfig):
       _start(conn, deckConfig);
+    case RejoinRoomMsg(:final roomId):
+      _rejoin(conn, roomId);
     default:
   }
 }
@@ -58,6 +60,23 @@ void _leave(Connection conn) {
     room.broadcast(
         roomStateMsg(room.id, room.playerEntries, room.isStarted));
   }
+}
+
+void _rejoin(Connection conn, String roomId) {
+  if (conn.room != null) {
+    conn.send(errorMsg('Already in a room'));
+    return;
+  }
+  final room = RoomManager.instance.find(roomId);
+  if (room == null) {
+    conn.send(errorMsg('room_not_found'));
+    return;
+  }
+  if (!room.rejoinPlayer(conn)) {
+    conn.send(errorMsg('rejoin_failed'));
+    return;
+  }
+  room.sendGameStateTo(conn);
 }
 
 void _start(Connection conn, DeckConfig? deckConfig) {

@@ -7,6 +7,7 @@ class Room {
   final String id;
   final StatsDao _stats;
   final List<Connection> _connections = [];
+  final Map<String, String> _disconnectedPlayers = {};
   Game? _game;
   DateTime? _startedAt;
   bool _finishedRecorded = false;
@@ -14,7 +15,7 @@ class Room {
   Room(this.id, this._stats);
 
   bool get isStarted => _game != null;
-  bool get isEmpty => _connections.isEmpty;
+  bool get isEmpty => _connections.isEmpty && _disconnectedPlayers.isEmpty;
   List<String> get playerIds =>
       _connections.map((c) => c.playerId!).toList();
   List<({String id, String nickname})> get playerEntries =>
@@ -27,12 +28,37 @@ class Room {
     return true;
   }
 
-  void removePlayer(Connection conn) {
+  void removePlayer(Connection conn, {bool disconnected = false}) {
     _connections.remove(conn);
     conn.room = null;
-    // Mid-game disconnects leave the player's slot in the game state.
-    // Their turn will stall until reconnection is implemented (future work).
+    if (disconnected &&
+        isStarted &&
+        _game!.state.phase != GamePhase.finished &&
+        conn.playerId != null) {
+      _disconnectedPlayers[conn.playerId!] = conn.nickname;
+    }
   }
+
+  bool rejoinPlayer(Connection conn) {
+    final pid = conn.playerId!;
+    if (!isStarted || !_disconnectedPlayers.containsKey(pid)) return false;
+    conn.nickname = _disconnectedPlayers.remove(pid)!;
+    _connections.add(conn);
+    conn.room = this;
+    return true;
+  }
+
+  void sendGameStateTo(Connection conn) {
+    if (_game == null) return;
+    final state = _game!.state;
+    final addingIds = _game!.addingPlayerIds;
+    conn.send(gameStateMsg(state, conn.playerId!, addingIds, _allNicknames()));
+  }
+
+  Map<String, String> _allNicknames() => {
+        for (final c in _connections) c.playerId!: c.nickname,
+        ..._disconnectedPlayers,
+      };
 
   bool startGame([DeckConfig? config]) {
     if (isStarted || _connections.length < 2) return false;
@@ -92,7 +118,7 @@ class Room {
   void broadcastGameState() {
     final state = _game!.state;
     final addingIds = _game!.addingPlayerIds;
-    final nicks = {for (final c in _connections) c.playerId!: c.nickname};
+    final nicks = _allNicknames();
     for (final conn in _connections) {
       conn.send(gameStateMsg(state, conn.playerId!, addingIds, nicks));
     }
