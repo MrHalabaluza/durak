@@ -18,7 +18,8 @@ RUN dart compile exe bin/server.dart -o bin/server
 # dart:stable has no dpkg-architecture; resolve the lib dir via find instead.
 RUN LIB_DIR=$(dirname "$(find /usr/lib -name 'libsqlite3.so.0' | head -1)") && \
     mkdir -p "/sqlite3-out${LIB_DIR}" && \
-    cp -a "${LIB_DIR}"/libsqlite3.so* "/sqlite3-out${LIB_DIR}/"
+    cp -a "${LIB_DIR}"/libsqlite3.so* "/sqlite3-out${LIB_DIR}/" && \
+    ln -sf libsqlite3.so.0 "/sqlite3-out${LIB_DIR}/libsqlite3.so"
 
 # distroless instead of scratch — libc needed for sqlite3
 FROM gcr.io/distroless/cc-debian12
