@@ -142,6 +142,10 @@ class _LobbyScreenState extends State<LobbyScreen>
                   messageStream: msgStream,
                   myPlayerId: myPlayerId,
                   initialState: _latestGameState,
+                  host: widget.host,
+                  port: widget.port,
+                  tls: widget.tls,
+                  token: widget.token,
                 ),
               ),
             );

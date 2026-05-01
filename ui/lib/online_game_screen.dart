@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:durak_logic/durak_logic.dart';
 import 'card_widget.dart';
+import 'lobby_screen.dart';
 import 'sort_hand.dart';
 
 // ── Card string helper ────────────────────────────────────────────────────────
@@ -178,12 +179,22 @@ class OnlineGameScreen extends StatefulWidget {
   /// First game_state received in the lobby — displayed immediately.
   final Map<String, dynamic>? initialState;
 
+  // Server connection params — used to navigate back to lobby after game ends.
+  final String host;
+  final int port;
+  final bool tls;
+  final String token;
+
   const OnlineGameScreen({
     super.key,
     required this.socket,
     required this.messageStream,
     required this.myPlayerId,
     this.initialState,
+    required this.host,
+    required this.port,
+    required this.tls,
+    required this.token,
   });
 
   @override
@@ -1547,8 +1558,18 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
             ],
             const SizedBox(height: 32),
             FilledButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('В главное меню'),
+              onPressed: () => Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => LobbyScreen(
+                    host: widget.host,
+                    port: widget.port,
+                    tls: widget.tls,
+                    token: widget.token,
+                  ),
+                ),
+              ),
+              child: const Text('В лобби'),
             ),
           ],
         ),
