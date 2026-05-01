@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'app_settings.dart';
+import 'auth/auth_gate_screen.dart';
 import 'lobby_screen.dart';
 import 'settings_screen.dart';
 
@@ -38,13 +39,30 @@ class SetupScreen extends StatefulWidget {
 
 class _SetupScreenState extends State<SetupScreen> {
   AppSettings _settings = AppSettings();
+  bool _settingsLoaded = false;
 
   @override
   void initState() {
     super.initState();
-    AppSettings.load().then((s) {
-      if (mounted) setState(() => _settings = s);
+    _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    final s = await AppSettings.load();
+    if (!mounted) return;
+    setState(() {
+      _settings = s;
+      _settingsLoaded = true;
     });
+    if (s.token == null) {
+      _goToAuth();
+    }
+  }
+
+  void _goToAuth() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => AuthGateScreen(settings: _settings)),
+    ).then((_) => _loadSettings()); // reload after auth returns
   }
 
   Future<void> _openSettings() async {
@@ -61,6 +79,8 @@ class _SetupScreenState extends State<SetupScreen> {
   }
 
   void _createRoom() {
+    final token = _settings.token;
+    if (token == null) { _goToAuth(); return; }
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -68,7 +88,7 @@ class _SetupScreenState extends State<SetupScreen> {
           host: _settings.serverHost,
           port: _settings.serverPort,
           tls: _settings.serverTls,
-          playerName: _settings.playerName,
+          token: token,
         ),
       ),
     );
@@ -80,6 +100,8 @@ class _SetupScreenState extends State<SetupScreen> {
       builder: (ctx) => const _JoinRoomDialog(),
     );
     if (code == null || !mounted) return;
+    final token = _settings.token;
+    if (token == null) { _goToAuth(); return; }
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -87,8 +109,8 @@ class _SetupScreenState extends State<SetupScreen> {
           host: _settings.serverHost,
           port: _settings.serverPort,
           tls: _settings.serverTls,
+          token: token,
           joinRoomId: code,
-          playerName: _settings.playerName,
         ),
       ),
     );
@@ -96,6 +118,10 @@ class _SetupScreenState extends State<SetupScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_settingsLoaded) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('DTFool'),
@@ -116,9 +142,9 @@ class _SetupScreenState extends State<SetupScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _PlayerNameCard(
-                  name: _settings.playerName,
-                  onEdit: _openSettings,
+                _UserCard(
+                  username: _settings.username,
+                  onLogin: _goToAuth,
                 ),
                 const SizedBox(height: 16),
                 _ServerInfoCard(
@@ -128,16 +154,24 @@ class _SetupScreenState extends State<SetupScreen> {
                 ),
                 const SizedBox(height: 32),
                 FilledButton.icon(
-                  onPressed: _createRoom,
+                  onPressed: _settings.token != null ? _createRoom : null,
                   icon: const Icon(Icons.add),
                   label: const Text('Создать комнату'),
                 ),
                 const SizedBox(height: 12),
                 OutlinedButton.icon(
-                  onPressed: _joinRoom,
+                  onPressed: _settings.token != null ? _joinRoom : null,
                   icon: const Icon(Icons.login),
                   label: const Text('Войти по коду'),
                 ),
+                if (_settings.token == null) ...[
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    onPressed: _goToAuth,
+                    icon: const Icon(Icons.account_circle_outlined),
+                    label: const Text('Войти / Зарегистрироваться'),
+                  ),
+                ],
               ],
             ),
           ),
@@ -147,11 +181,11 @@ class _SetupScreenState extends State<SetupScreen> {
   }
 }
 
-class _PlayerNameCard extends StatelessWidget {
-  final String name;
-  final VoidCallback onEdit;
+class _UserCard extends StatelessWidget {
+  final String? username;
+  final VoidCallback onLogin;
 
-  const _PlayerNameCard({required this.name, required this.onEdit});
+  const _UserCard({required this.username, required this.onLogin});
 
   @override
   Widget build(BuildContext context) {
@@ -166,14 +200,17 @@ class _PlayerNameCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Никнейм',
+                  const Text('Игрок',
                       style: TextStyle(color: Colors.grey, fontSize: 11)),
-                  Text(name.isEmpty ? '—' : name,
-                      style: const TextStyle(fontSize: 15)),
+                  Text(
+                    username ?? '—',
+                    style: const TextStyle(fontSize: 15),
+                  ),
                 ],
               ),
             ),
-            TextButton(onPressed: onEdit, child: const Text('Изменить')),
+            if (username == null)
+              TextButton(onPressed: onLogin, child: const Text('Войти')),
           ],
         ),
       ),
