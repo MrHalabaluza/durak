@@ -20,7 +20,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late Map<Card, int> _counts;
   late TextEditingController _hostCtrl;
   late TextEditingController _portCtrl;
-  late TextEditingController _nameCtrl;
   late TextEditingController _randomCountCtrl;
   late bool _tls;
   late _CardRange _cardRange;
@@ -50,8 +49,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _counts = Map<Card, int>.from(initial.counts);
     _hostCtrl = TextEditingController(text: widget.initial.serverHost);
     _portCtrl = TextEditingController(text: '${widget.initial.serverPort}');
-    _nameCtrl = TextEditingController(text: widget.initial.playerName)
-      ..addListener(() => setState(() {}));
     _tls = widget.initial.serverTls;
 
     final hasLowRanks =
@@ -71,7 +68,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void dispose() {
     _hostCtrl.dispose();
     _portCtrl.dispose();
-    _nameCtrl.dispose();
     _randomCountCtrl.dispose();
     super.dispose();
   }
@@ -113,7 +109,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   AppSettings _buildSettings() {
     final port = int.tryParse(_portCtrl.text) ?? 8080;
-    final name = _nameCtrl.text.trim();
     return AppSettings(
       deckConfig: DeckConfig.custom(_counts),
       serverHost: _hostCtrl.text.trim().isEmpty
@@ -121,11 +116,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           : _hostCtrl.text.trim(),
       serverPort: port > 0 && port <= 65535 ? port : 8080,
       serverTls: _tls,
-      playerName: name.isEmpty ? widget.initial.playerName : name,
     );
   }
 
-  bool get _canSave => _nameCtrl.text.trim().isNotEmpty;
+  bool get _canSave => true;
 
   Future<void> _editCell(Suit suit, Rank rank) async {
     final card = Card(suit, rank);
@@ -192,33 +186,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Player name ───────────────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Text(
-              'Игрок',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleMedium
-                  ?.copyWith(fontWeight: FontWeight.bold),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            child: TextField(
-              controller: _nameCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Имя игрока',
-                hintText: 'Введите имя',
-                border: OutlineInputBorder(),
-                isDense: true,
-              ),
-              textCapitalization: TextCapitalization.words,
-              maxLength: 20,
-            ),
-          ),
-          const Divider(height: 1),
-
           // ── Server settings ───────────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),

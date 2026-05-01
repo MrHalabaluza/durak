@@ -12,7 +12,7 @@ class LobbyScreen extends StatefulWidget {
   final String host;
   final int port;
   final bool tls;
-  final String playerName;
+  final String token;
 
   /// null — создать комнату, иначе — ID комнаты для входа
   final String? joinRoomId;
@@ -22,7 +22,7 @@ class LobbyScreen extends StatefulWidget {
     required this.host,
     required this.port,
     this.tls = false,
-    this.playerName = '',
+    required this.token,
     this.joinRoomId,
   });
 
@@ -30,7 +30,7 @@ class LobbyScreen extends StatefulWidget {
   State<LobbyScreen> createState() => _LobbyScreenState();
 }
 
-enum _Status { connecting, connected, error, disconnected }
+enum _Status { connecting, authenticating, connected, error, disconnected }
 
 class _LobbyScreenState extends State<LobbyScreen>
     with WidgetsBindingObserver {
@@ -55,9 +55,6 @@ class _LobbyScreenState extends State<LobbyScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    // Defer until after first build so setState / Navigator calls in _connect
-    // don't fire before the widget tree is fully mounted (avoids
-    // _dependents.isEmpty assertion from calling setState in initState).
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _connect();
     });
@@ -65,9 +62,7 @@ class _LobbyScreenState extends State<LobbyScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed && mounted) {
-      setState(() {});
-    }
+    if (state == AppLifecycleState.resumed && mounted) setState(() {});
   }
 
   Future<void> _connect() async {
@@ -80,40 +75,36 @@ class _LobbyScreenState extends State<LobbyScreen>
       final ws = WebSocketChannel.connect(
           Uri.parse('$scheme://${widget.host}:${widget.port}'));
       await ws.ready;
-      if (!mounted) {
-        ws.sink.close();
-        return;
-      }
-      // Convert to broadcast so OnlineGameScreen can subscribe without
-      // "Stream has already been listened to" error.
+      if (!mounted) { ws.sink.close(); return; }
+
       final stream = ws.stream
           .map((data) => jsonDecode(data as String) as Map<String, dynamic>)
           .asBroadcastStream();
       setState(() {
         _socket = ws;
         _msgStream = stream;
-        _status = _Status.connected;
+        _status = _Status.authenticating;
       });
       _sub = stream.listen(_onMessage, onDone: _onDone, onError: _onError);
-      _send(_isCreator
-          ? {'type': 'create_room', 'nickname': widget.playerName}
-          : {
-              'type': 'join_room',
-              'roomId': widget.joinRoomId,
-              'nickname': widget.playerName,
-            });
+
+      // Step 1: send auth — wait for auth_ok before create/join
+      _send({'type': 'auth', 'token': widget.token});
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _status = _Status.error;
-          _error = e.toString();
-        });
-      }
+      if (mounted) setState(() { _status = _Status.error; _error = e.toString(); });
     }
   }
 
   void _onMessage(Map<String, dynamic> map) {
     switch (map['type'] as String) {
+      case 'auth_ok':
+        if (mounted) setState(() => _status = _Status.connected);
+        // Step 2: now join or create room
+        if (_isCreator) {
+          _send({'type': 'create_room'});
+        } else {
+          _send({'type': 'join_room', 'roomId': widget.joinRoomId});
+        }
+
       case 'room_joined':
         if (mounted) {
           setState(() {
@@ -121,38 +112,26 @@ class _LobbyScreenState extends State<LobbyScreen>
             _myPlayerId = map['playerId'] as String;
           });
         }
+
       case 'room_state':
         if (mounted) {
           setState(() {
             _roomId = map['roomId'] as String;
             _players = (map['players'] as List).map((e) {
               final p = e as Map<String, dynamic>;
-              return (
-                id: p['id'] as String,
-                nickname: p['nickname'] as String? ?? '',
-              );
+              return (id: p['id'] as String, nickname: p['nickname'] as String? ?? '');
             }).toList();
           });
         }
+
       case 'game_state':
-        // Always track the latest state so that if the window is inactive
-        // when the game starts (no frames rendered → postFrameCallback is
-        // deferred), we hand off the most recent state to OnlineGameScreen
-        // instead of the stale initial one.
         _latestGameState = map;
         if (!_gameStarted && mounted) {
           _gameStarted = true;
-          // Don't cancel _sub here — let dispose() do it after
-          // OnlineGameScreen.initState() has already subscribed to the
-          // broadcast stream. Cancelling here would kill the source
-          // before the game screen subscribes.
           final socket = _socket!;
-          _socket = null; // dispose() won't close a socket we handed off
+          _socket = null;
           final msgStream = _msgStream!;
           final myPlayerId = _myPlayerId!;
-          // Defer navigation to the next frame so it never fires during a
-          // build phase, which would violate the _dependents.isEmpty
-          // invariant on InheritedElements.
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted) return;
             Navigator.pushReplacement(
@@ -168,8 +147,16 @@ class _LobbyScreenState extends State<LobbyScreen>
             );
           });
         }
+
       case 'error':
-        if (mounted) setState(() => _error = map['message'] as String);
+        final msg = map['message'] as String;
+        if (msg == 'bad_token' || msg == 'auth_timeout') {
+          // Token rejected — clear auth and go back
+          AppSettings.clearAuth();
+          if (mounted) Navigator.pop(context);
+          return;
+        }
+        if (mounted) setState(() => _error = msg);
     }
   }
 
@@ -178,16 +165,10 @@ class _LobbyScreenState extends State<LobbyScreen>
   }
 
   void _onError(Object e) {
-    if (mounted) {
-      setState(() {
-        _status = _Status.error;
-        _error = e.toString();
-      });
-    }
+    if (mounted) setState(() { _status = _Status.error; _error = e.toString(); });
   }
 
-  void _send(Map<String, dynamic> msg) =>
-      _socket?.sink.add(jsonEncode(msg));
+  void _send(Map<String, dynamic> msg) => _socket?.sink.add(jsonEncode(msg));
 
   void _startGame() {
     final config = _deckConfig.counts.entries
@@ -214,9 +195,7 @@ class _LobbyScreenState extends State<LobbyScreen>
         ),
       ),
     );
-    if (result != null && mounted) {
-      setState(() => _deckConfig = result.deckConfig);
-    }
+    if (result != null && mounted) setState(() => _deckConfig = result.deckConfig);
   }
 
   void _leave() {
@@ -239,13 +218,10 @@ class _LobbyScreenState extends State<LobbyScreen>
   Widget build(BuildContext context) {
     return PopScope(
       canPop: false,
-      onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) _leave();
-      },
+      onPopInvokedWithResult: (didPop, _) { if (!didPop) _leave(); },
       child: Scaffold(
         appBar: AppBar(
-          title:
-              Text(_roomId != null ? 'Комната $_roomId' : 'Лобби'),
+          title: Text(_roomId != null ? 'Комната $_roomId' : 'Лобби'),
           leading: IconButton(
             icon: const Icon(Icons.arrow_back),
             tooltip: 'Выйти из комнаты',
@@ -258,22 +234,18 @@ class _LobbyScreenState extends State<LobbyScreen>
   }
 
   Widget _buildBody() {
-    switch (_status) {
-      case _Status.connecting:
-        return const Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 16),
-              Text('Подключение к серверу...'),
-            ],
-          ),
-        );
-
-      case _Status.error:
-      case _Status.disconnected:
-        return Center(
+    return switch (_status) {
+      _Status.connecting => const _CenteredMessage(
+          icon: null,
+          text: 'Подключение к серверу...',
+          showSpinner: true,
+        ),
+      _Status.authenticating => const _CenteredMessage(
+          icon: null,
+          text: 'Авторизация...',
+          showSpinner: true,
+        ),
+      _Status.error || _Status.disconnected => Center(
           child: Padding(
             padding: const EdgeInsets.all(32),
             child: Column(
@@ -285,16 +257,12 @@ class _LobbyScreenState extends State<LobbyScreen>
                   _status == _Status.disconnected
                       ? 'Соединение разорвано'
                       : 'Ошибка подключения',
-                  style: const TextStyle(
-                      fontSize: 18, fontWeight: FontWeight.bold),
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
                 if (_error != null) ...[
                   const SizedBox(height: 8),
-                  Text(
-                    _error!,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.grey, fontSize: 13),
-                  ),
+                  Text(_error!, textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.grey, fontSize: 13)),
                 ],
                 const SizedBox(height: 24),
                 FilledButton.icon(
@@ -305,11 +273,9 @@ class _LobbyScreenState extends State<LobbyScreen>
               ],
             ),
           ),
-        );
-
-      case _Status.connected:
-        return _buildLobby();
-    }
+        ),
+      _Status.connected => _buildLobby(),
+    };
   }
 
   Widget _buildLobby() {
@@ -327,12 +293,9 @@ class _LobbyScreenState extends State<LobbyScreen>
           if (_error != null)
             Padding(
               padding: const EdgeInsets.only(bottom: 12),
-              child: Text(
-                _error!,
-                style:
-                    const TextStyle(color: Colors.redAccent, fontSize: 13),
-                textAlign: TextAlign.center,
-              ),
+              child: Text(_error!,
+                  style: const TextStyle(color: Colors.redAccent, fontSize: 13),
+                  textAlign: TextAlign.center),
             ),
           if (_isCreator)
             FilledButton(
@@ -341,10 +304,8 @@ class _LobbyScreenState extends State<LobbyScreen>
             ),
           if (!_isCreator)
             const Center(
-              child: Text(
-                'Ожидание начала игры от создателя комнаты...',
-                style: TextStyle(color: Colors.grey),
-              ),
+              child: Text('Ожидание начала игры от создателя комнаты...',
+                  style: TextStyle(color: Colors.grey)),
             ),
         ],
       ),
@@ -365,17 +326,12 @@ class _LobbyScreenState extends State<LobbyScreen>
                 children: [
                   const Text('Колода',
                       style: TextStyle(color: Colors.grey, fontSize: 11)),
-                  Text(
-                    '${_deckConfig.cardCount} карт',
-                    style: const TextStyle(fontSize: 15),
-                  ),
+                  Text('${_deckConfig.cardCount} карт',
+                      style: const TextStyle(fontSize: 15)),
                 ],
               ),
             ),
-            TextButton(
-              onPressed: _editDeckConfig,
-              child: const Text('Настроить'),
-            ),
+            TextButton(onPressed: _editDeckConfig, child: const Text('Настроить')),
           ],
         ),
       ),
@@ -392,19 +348,12 @@ class _LobbyScreenState extends State<LobbyScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Код комнаты',
-                    style: TextStyle(color: Colors.grey, fontSize: 12),
-                  ),
+                  const Text('Код комнаты',
+                      style: TextStyle(color: Colors.grey, fontSize: 12)),
                   const SizedBox(height: 4),
-                  Text(
-                    _roomId!,
-                    style: const TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 4,
-                    ),
-                  ),
+                  Text(_roomId!,
+                      style: const TextStyle(
+                          fontSize: 28, fontWeight: FontWeight.bold, letterSpacing: 4)),
                 ],
               ),
             ),
@@ -415,9 +364,8 @@ class _LobbyScreenState extends State<LobbyScreen>
                 Clipboard.setData(ClipboardData(text: _roomId!));
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Код комнаты скопирован'),
-                    duration: Duration(seconds: 2),
-                  ),
+                      content: Text('Код комнаты скопирован'),
+                      duration: Duration(seconds: 2)),
                 );
               },
             ),
@@ -434,16 +382,11 @@ class _LobbyScreenState extends State<LobbyScreen>
         children: [
           Row(
             children: [
-              const Text(
-                'Игроки',
-                style:
-                    TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
+              const Text('Игроки',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
               const SizedBox(width: 8),
-              Text(
-                '${_players.length}/6',
-                style: const TextStyle(color: Colors.grey, fontSize: 16),
-              ),
+              Text('${_players.length}/6',
+                  style: const TextStyle(color: Colors.grey, fontSize: 16)),
             ],
           ),
           const SizedBox(height: 12),
@@ -453,8 +396,7 @@ class _LobbyScreenState extends State<LobbyScreen>
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.hourglass_empty,
-                            size: 40, color: Colors.grey),
+                        Icon(Icons.hourglass_empty, size: 40, color: Colors.grey),
                         SizedBox(height: 8),
                         Text('Ожидание игроков...',
                             style: TextStyle(color: Colors.grey)),
@@ -463,8 +405,7 @@ class _LobbyScreenState extends State<LobbyScreen>
                   )
                 : ListView.separated(
                     itemCount: _players.length,
-                    separatorBuilder: (_, i) =>
-                        const SizedBox(height: 4),
+                    separatorBuilder: (_, _) => const SizedBox(height: 4),
                     itemBuilder: (_, i) => _buildPlayerTile(i),
                   ),
           ),
@@ -476,22 +417,16 @@ class _LobbyScreenState extends State<LobbyScreen>
   Widget _buildPlayerTile(int index) {
     final p = _players[index];
     final isMe = p.id == _myPlayerId;
-
     return ListTile(
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8),
         side: isMe
-            ? BorderSide(
-                color: Theme.of(context).colorScheme.primary, width: 1.5)
+            ? BorderSide(color: Theme.of(context).colorScheme.primary, width: 1.5)
             : BorderSide.none,
       ),
-      tileColor: isMe
-          ? Theme.of(context).colorScheme.primary.withAlpha(20)
-          : null,
+      tileColor: isMe ? Theme.of(context).colorScheme.primary.withAlpha(20) : null,
       leading: CircleAvatar(
-        backgroundColor: isMe
-            ? Theme.of(context).colorScheme.primary
-            : null,
+        backgroundColor: isMe ? Theme.of(context).colorScheme.primary : null,
         child: Text('${index + 1}'),
       ),
       title: Text(
@@ -503,9 +438,30 @@ class _LobbyScreenState extends State<LobbyScreen>
             : null,
       ),
       trailing: isMe
-          ? Icon(Icons.person,
-              color: Theme.of(context).colorScheme.primary)
+          ? Icon(Icons.person, color: Theme.of(context).colorScheme.primary)
           : null,
+    );
+  }
+}
+
+class _CenteredMessage extends StatelessWidget {
+  final IconData? icon;
+  final String text;
+  final bool showSpinner;
+  const _CenteredMessage({this.icon, required this.text, this.showSpinner = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (showSpinner) const CircularProgressIndicator(),
+          if (icon != null) Icon(icon, size: 48, color: Colors.grey),
+          const SizedBox(height: 16),
+          Text(text),
+        ],
+      ),
     );
   }
 }
