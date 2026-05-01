@@ -23,6 +23,7 @@ class Connection {
   }) : _socket = socket {
     _authTimer = Timer(const Duration(seconds: 5), () {
       if (!authed) {
+        print('[auth] auth_timeout');
         send(errorMsg('auth_timeout'));
         close();
       }

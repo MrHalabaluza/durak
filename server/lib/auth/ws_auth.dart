@@ -10,6 +10,7 @@ Dispatch authedDispatch(AuthService auth, Dispatch inner) {
       if (msg is AuthMsg) {
         final u = auth.resolveToken(msg.token);
         if (u == null) {
+          print('[auth] bad_token');
           conn.send(errorMsg('bad_token'));
           conn.close();
           return;

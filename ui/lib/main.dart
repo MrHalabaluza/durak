@@ -110,7 +110,7 @@ class _SetupScreenState extends State<SetupScreen> {
           token: token,
         ),
       ),
-    );
+    ).then((_) { if (mounted) _loadSettings(); });
   }
 
   Future<void> _joinRoom() async {
@@ -132,7 +132,7 @@ class _SetupScreenState extends State<SetupScreen> {
           joinRoomId: code,
         ),
       ),
-    );
+    ).then((_) { if (mounted) _loadSettings(); });
   }
 
   @override

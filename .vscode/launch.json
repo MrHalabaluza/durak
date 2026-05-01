@@ -49,6 +49,36 @@
       "flutterMode": "debug",
       "deviceId": "web-server",
       "args": ["--web-port", "7003"]
+    },
+    {
+      "name": "Client 4 (web :7004)",
+      "type": "dart",
+      "request": "launch",
+      "program": "${workspaceFolder}/ui/lib/main.dart",
+      "cwd": "${workspaceFolder}/ui",
+      "flutterMode": "debug",
+      "deviceId": "web-server",
+      "args": ["--web-port", "7004"]
+    },
+    {
+      "name": "Client 5 (web :7005)",
+      "type": "dart",
+      "request": "launch",
+      "program": "${workspaceFolder}/ui/lib/main.dart",
+      "cwd": "${workspaceFolder}/ui",
+      "flutterMode": "debug",
+      "deviceId": "web-server",
+      "args": ["--web-port", "7005"]
+    },
+    {
+      "name": "Client 6 (web :7006)",
+      "type": "dart",
+      "request": "launch",
+      "program": "${workspaceFolder}/ui/lib/main.dart",
+      "cwd": "${workspaceFolder}/ui",
+      "flutterMode": "debug",
+      "deviceId": "web-server",
+      "args": ["--web-port", "7006"]
     }
   ],
   "compounds": [
@@ -72,8 +102,7 @@
         "Client 2 (web :7002)",
         "Client 3 (web :7003)"
       ]
-    }
-    ,
+    },
     {
       "name": "Dev: 2 Local Clients",
       "configurations": [
