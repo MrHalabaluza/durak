@@ -33,7 +33,23 @@ class Router {
   void add(String method, String pattern, HttpHandler h) =>
       _routes.add(Route(method, pattern, h));
 
+  static void _addCorsHeaders(HttpResponse res) {
+    res.headers
+      ..set('Access-Control-Allow-Origin', '*')
+      ..set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+      ..set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  }
+
   Future<bool> dispatch(HttpRequest req) async {
+    _addCorsHeaders(req.response);
+
+    if (req.method == 'OPTIONS') {
+      req.response
+        ..statusCode = HttpStatus.noContent
+        ..close();
+      return true;
+    }
+
     final segs = req.uri.pathSegments;
     for (final r in _routes) {
       final p = r.match(req.method, segs);
