@@ -14,10 +14,14 @@ RUN dart pub get --no-example
 COPY server/ ./
 RUN dart compile exe bin/server.dart -o bin/server
 
-# Minimal runtime image (scratch + Dart shared libs)
-FROM scratch
+# distroless instead of scratch — libc needed for sqlite3
+FROM gcr.io/distroless/cc-debian12
 COPY --from=build /runtime/ /
 COPY --from=build /app/server/bin/server /app/server
+COPY --from=build /usr/lib/x86_64-linux-gnu/libsqlite3.so* /usr/lib/x86_64-linux-gnu/
 
+VOLUME ["/data"]
 EXPOSE 8080
-CMD ["/app/server"]
+ENV DURAK_DB_PATH=/data/durak.db
+ENV DURAK_AVATARS_DIR=/data/avatars
+ENTRYPOINT ["/app/server"]
