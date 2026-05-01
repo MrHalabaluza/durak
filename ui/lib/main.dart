@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'app_settings.dart';
 import 'auth/auth_gate_screen.dart';
 import 'lobby_screen.dart';
+import 'profile/leaderboard_screen.dart';
+import 'profile/profile_screen.dart';
 import 'settings_screen.dart';
 
 void main() {
@@ -68,14 +70,31 @@ class _SetupScreenState extends State<SetupScreen> {
   Future<void> _openSettings() async {
     final result = await Navigator.push<AppSettings>(
       context,
-      MaterialPageRoute(
-        builder: (_) => SettingsScreen(initial: _settings),
-      ),
+      MaterialPageRoute(builder: (_) => SettingsScreen(initial: _settings)),
     );
     if (result != null) {
       setState(() => _settings = result);
       result.save();
     }
+  }
+
+  void _openProfile() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ProfileScreen(
+          settings: _settings,
+          onSettingsChanged: (s) => setState(() => _settings = s),
+        ),
+      ),
+    ).then((_) => _loadSettings());
+  }
+
+  void _openLeaderboard() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => LeaderboardScreen(settings: _settings)),
+    );
   }
 
   void _createRoom() {
@@ -126,6 +145,18 @@ class _SetupScreenState extends State<SetupScreen> {
       appBar: AppBar(
         title: const Text('DTFool'),
         actions: [
+          if (_settings.token != null) ...[
+            IconButton(
+              icon: const Icon(Icons.leaderboard_outlined),
+              tooltip: 'Лидерборд',
+              onPressed: _openLeaderboard,
+            ),
+            IconButton(
+              icon: const Icon(Icons.account_circle_outlined),
+              tooltip: 'Профиль',
+              onPressed: _openProfile,
+            ),
+          ],
           IconButton(
             icon: const Icon(Icons.settings),
             tooltip: 'Настройки',
