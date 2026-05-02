@@ -18,8 +18,20 @@ class Room {
   bool get isEmpty => _connections.isEmpty && _disconnectedPlayers.isEmpty;
   List<String> get playerIds =>
       _connections.map((c) => c.playerId!).toList();
-  List<({String id, String nickname})> get playerEntries =>
-      _connections.map((c) => (id: c.playerId!, nickname: c.nickname)).toList();
+  List<({String id, String nickname, int gamesPlayed, int wins, int losses, int draws})> get playerEntries {
+    return _connections.map((c) {
+      final userId = int.tryParse(c.playerId ?? '');
+      final s = userId != null ? _stats.getUserStats(userId) : null;
+      return (
+        id: c.playerId!,
+        nickname: c.nickname,
+        gamesPlayed: s?.gamesPlayed ?? 0,
+        wins: s?.wins ?? 0,
+        losses: s?.losses ?? 0,
+        draws: s?.draws ?? 0,
+      );
+    }).toList();
+  }
 
   bool addPlayer(Connection conn) {
     if (isStarted || _connections.length >= 6) return false;
@@ -41,7 +53,7 @@ class Room {
 
   bool rejoinPlayer(Connection conn) {
     final pid = conn.playerId!;
-    if (!isStarted || !_disconnectedPlayers.containsKey(pid)) return false;
+    if (!_disconnectedPlayers.containsKey(pid)) return false;
     conn.nickname = _disconnectedPlayers.remove(pid)!;
     _connections.add(conn);
     conn.room = this;
@@ -139,6 +151,12 @@ class Room {
         print('recordGame failed: $e\n$st');
       }
       broadcast({'type': 'game_over', 'loserId': state.loserId});
+      // Сбросить игру — комната переходит обратно в лобби с теми же игроками
+      _game = null;
+      _startedAt = null;
+      _finishedRecorded = false;
+      _disconnectedPlayers.clear();
+      broadcast(roomStateMsg(id, playerEntries, false));
     }
   }
 }

@@ -17,6 +17,13 @@ class LobbyScreen extends StatefulWidget {
   /// null — создать комнату, иначе — ID комнаты для входа
   final String? joinRoomId;
 
+  // Resume-режим: возврат в лобби после партии без переподключения
+  final WebSocketChannel? resumeSocket;
+  final Stream<Map<String, dynamic>>? resumeStream;
+  final String? resumeRoomId;
+  final String? resumePlayerId;
+  final Map<String, dynamic>? resumeRoomStateMsg;
+
   const LobbyScreen({
     super.key,
     required this.host,
@@ -24,6 +31,11 @@ class LobbyScreen extends StatefulWidget {
     this.tls = false,
     required this.token,
     this.joinRoomId,
+    this.resumeSocket,
+    this.resumeStream,
+    this.resumeRoomId,
+    this.resumePlayerId,
+    this.resumeRoomStateMsg,
   });
 
   @override
@@ -43,21 +55,63 @@ class _LobbyScreenState extends State<LobbyScreen>
 
   String? _roomId;
   String? _myPlayerId;
-  List<({String id, String nickname})> _players = [];
+  List<({String id, String nickname, int gamesPlayed, int wins, int losses, int draws})> _players = [];
   bool _gameStarted = false;
   Map<String, dynamic>? _latestGameState;
 
   DeckConfig _deckConfig = DeckConfig();
 
-  bool get _isCreator => widget.joinRoomId == null;
+  bool get _isResuming => widget.resumeSocket != null;
+
+  // В resume-режиме любой игрок может начать следующую партию
+  bool get _isCreator => widget.joinRoomId == null || _isResuming;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _connect();
+      if (!mounted) return;
+      if (_isResuming) {
+        _resumeFromGame();
+      } else {
+        _connect();
+      }
     });
+  }
+
+  void _resumeFromGame() {
+    final ws = widget.resumeSocket!;
+    final stream = widget.resumeStream!;
+    final msg = widget.resumeRoomStateMsg;
+    setState(() {
+      _socket = ws;
+      _msgStream = stream;
+      _status = _Status.connected;
+      _roomId = widget.resumeRoomId;
+      _myPlayerId = widget.resumePlayerId;
+      if (msg != null) {
+        _roomId = msg['roomId'] as String? ?? widget.resumeRoomId;
+        _players = _parsePlayerList(msg['players'] as List);
+      }
+    });
+    _sub = stream.listen(_onMessage, onDone: _onDone, onError: _onError);
+  }
+
+  static List<({String id, String nickname, int gamesPlayed, int wins, int losses, int draws})>
+      _parsePlayerList(List<dynamic> list) {
+    return list.map((e) {
+      final p = e as Map<String, dynamic>;
+      final s = p['stats'] as Map<String, dynamic>?;
+      return (
+        id: p['id'] as String,
+        nickname: p['nickname'] as String? ?? '',
+        gamesPlayed: s?['gamesPlayed'] as int? ?? 0,
+        wins: s?['wins'] as int? ?? 0,
+        losses: s?['losses'] as int? ?? 0,
+        draws: s?['draws'] as int? ?? 0,
+      );
+    }).toList();
   }
 
   @override
@@ -117,10 +171,7 @@ class _LobbyScreenState extends State<LobbyScreen>
         if (mounted) {
           setState(() {
             _roomId = map['roomId'] as String;
-            _players = (map['players'] as List).map((e) {
-              final p = e as Map<String, dynamic>;
-              return (id: p['id'] as String, nickname: p['nickname'] as String? ?? '');
-            }).toList();
+            _players = _parsePlayerList(map['players'] as List);
           });
         }
 
@@ -422,32 +473,239 @@ class _LobbyScreenState extends State<LobbyScreen>
   Widget _buildPlayerTile(int index) {
     final p = _players[index];
     final isMe = p.id == _myPlayerId;
-    return ListTile(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-        side: isMe
-            ? BorderSide(color: Theme.of(context).colorScheme.primary, width: 1.5)
-            : BorderSide.none,
-      ),
-      tileColor: isMe ? Theme.of(context).colorScheme.primary.withAlpha(20) : null,
-      leading: CircleAvatar(
-        backgroundColor: isMe ? Theme.of(context).colorScheme.primary : null,
-        child: Text('${index + 1}'),
-      ),
-      title: Text(
-        p.nickname.isEmpty ? 'Игрок ${index + 1}' : p.nickname,
-        style: isMe
-            ? TextStyle(
-                fontWeight: FontWeight.bold,
-                color: Theme.of(context).colorScheme.primary)
-            : null,
-      ),
-      trailing: isMe
-          ? Icon(Icons.person, color: Theme.of(context).colorScheme.primary)
-          : null,
+    return _PlayerTileWithPopup(
+      player: p,
+      isMe: isMe,
+      index: index,
+      primaryColor: Theme.of(context).colorScheme.primary,
     );
   }
 }
+
+// ─── Player tile with hover/tap stats popup ───────────────────────────────────
+
+typedef _PlayerEntry = ({
+  String id,
+  String nickname,
+  int gamesPlayed,
+  int wins,
+  int losses,
+  int draws,
+});
+
+class _PlayerTileWithPopup extends StatefulWidget {
+  final _PlayerEntry player;
+  final bool isMe;
+  final int index;
+  final Color primaryColor;
+
+  const _PlayerTileWithPopup({
+    required this.player,
+    required this.isMe,
+    required this.index,
+    required this.primaryColor,
+  });
+
+  @override
+  State<_PlayerTileWithPopup> createState() => _PlayerTileWithPopupState();
+}
+
+class _PlayerTileWithPopupState extends State<_PlayerTileWithPopup> {
+  OverlayEntry? _overlay;
+  final _link = LayerLink();
+
+  @override
+  void dispose() {
+    _overlay?.remove();
+    _overlay = null;
+    super.dispose();
+  }
+
+  void _showOverlay() {
+    if (_overlay != null) return;
+    final entry = OverlayEntry(
+      builder: (_) => _StatsOverlay(link: _link, player: widget.player),
+    );
+    _overlay = entry;
+    Overlay.of(context).insert(entry);
+  }
+
+  void _hideOverlay() {
+    _overlay?.remove();
+    _overlay = null;
+  }
+
+  void _showDialog() {
+    _hideOverlay();
+    showDialog(
+      context: context,
+      builder: (_) => _StatsDialog(player: widget.player),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.player;
+    final isMe = widget.isMe;
+    return CompositedTransformTarget(
+      link: _link,
+      child: MouseRegion(
+        onEnter: (_) => _showOverlay(),
+        onExit: (_) => _hideOverlay(),
+        child: GestureDetector(
+          onTap: _showDialog,
+          child: ListTile(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+              side: isMe
+                  ? BorderSide(color: widget.primaryColor, width: 1.5)
+                  : BorderSide.none,
+            ),
+            tileColor: isMe ? widget.primaryColor.withAlpha(20) : null,
+            leading: CircleAvatar(
+              backgroundColor: isMe ? widget.primaryColor : null,
+              child: Text('${widget.index + 1}'),
+            ),
+            title: Text(
+              p.nickname.isEmpty ? 'Игрок ${widget.index + 1}' : p.nickname,
+              style: isMe
+                  ? TextStyle(
+                      fontWeight: FontWeight.bold, color: widget.primaryColor)
+                  : null,
+            ),
+            trailing: isMe
+                ? Icon(Icons.person, color: widget.primaryColor)
+                : null,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _StatsOverlay extends StatelessWidget {
+  final LayerLink link;
+  final _PlayerEntry player;
+
+  const _StatsOverlay({required this.link, required this.player});
+
+  @override
+  Widget build(BuildContext context) {
+    return CompositedTransformFollower(
+      link: link,
+      showWhenUnlinked: false,
+      targetAnchor: Alignment.centerRight,
+      followerAnchor: Alignment.centerLeft,
+      offset: const Offset(8, 0),
+      child: Material(
+        elevation: 6,
+        borderRadius: BorderRadius.circular(10),
+        child: _StatsCard(player: player),
+      ),
+    );
+  }
+}
+
+class _StatsDialog extends StatelessWidget {
+  final _PlayerEntry player;
+
+  const _StatsDialog({required this.player});
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: _StatsCard(player: player, padded: true),
+    );
+  }
+}
+
+class _StatsCard extends StatelessWidget {
+  final _PlayerEntry player;
+  final bool padded;
+
+  const _StatsCard({required this.player, this.padded = false});
+
+  String _pct(int value) {
+    if (player.gamesPlayed == 0) return '';
+    final pct = (value / player.gamesPlayed * 100).toStringAsFixed(1);
+    return ' ($pct%)';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final name =
+        player.nickname.isEmpty ? 'Игрок' : player.nickname;
+    final cs = Theme.of(context).colorScheme;
+    final noGames = player.gamesPlayed == 0;
+
+    return Padding(
+      padding: EdgeInsets.all(padded ? 20 : 14),
+      child: IntrinsicWidth(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.person_outline, size: 18),
+                const SizedBox(width: 6),
+                Text(name,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 15)),
+              ],
+            ),
+            const SizedBox(height: 8),
+            const Divider(height: 1),
+            const SizedBox(height: 8),
+            if (noGames)
+              const Text('Нет сыгранных партий',
+                  style: TextStyle(color: Colors.grey, fontSize: 13))
+            else ...[
+              _Row('Игр сыграно', '${player.gamesPlayed}'),
+              _Row('Победы', '${player.wins}${_pct(player.wins)}',
+                  color: cs.primary),
+              _Row('Поражения', '${player.losses}${_pct(player.losses)}',
+                  color: Colors.redAccent),
+              _Row('Ничьи', '${player.draws}${_pct(player.draws)}',
+                  color: Colors.grey),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _Row extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color? color;
+
+  const _Row(this.label, this.value, {this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label,
+              style: const TextStyle(fontSize: 13, color: Colors.grey)),
+          const SizedBox(width: 24),
+          Text(value,
+              style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: color)),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 class _CenteredMessage extends StatelessWidget {
   final IconData? icon;

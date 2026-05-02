@@ -76,7 +76,13 @@ void _rejoin(Connection conn, String roomId) {
     conn.send(errorMsg('rejoin_failed'));
     return;
   }
-  room.sendGameStateTo(conn);
+  if (room.isStarted) {
+    room.sendGameStateTo(conn);
+  } else {
+    // Игра уже закончилась — возвращаем игрока в лобби той же комнаты
+    conn.send(roomJoinedMsg(room.id, conn.playerId!));
+    room.broadcast(roomStateMsg(room.id, room.playerEntries, false));
+  }
 }
 
 void _start(Connection conn, DeckConfig? deckConfig) {

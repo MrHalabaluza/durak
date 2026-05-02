@@ -207,6 +207,7 @@ class OnlineGameScreen extends StatefulWidget {
 class _OnlineGameScreenState extends State<OnlineGameScreen>
     with WidgetsBindingObserver {
   late WebSocketChannel _socket;
+  late Stream<Map<String, dynamic>> _currentStream;
   StreamSubscription? _sub;
   _RemoteGS? _gs;
   String? _error;
@@ -215,6 +216,11 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
   int _reconnectAttempts = 0;
   Timer? _reconnectTimer;
   static const _maxReconnectAttempts = 8;
+
+  // Когда true — не закрывать сокет в dispose (передаём его в LobbyScreen)
+  bool _navigatingToLobby = false;
+  // room_state, пришедший после окончания партии — содержит актуальный состав
+  Map<String, dynamic>? _pendingRoomState;
 
   final Set<int> _selectedCardIds = {};
   Card? _selectedAttackCard;
@@ -252,6 +258,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
   void initState() {
     super.initState();
     _socket = widget.socket;
+    _currentStream = widget.messageStream;
     WidgetsBinding.instance.addObserver(this);
     SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     if (widget.initialState != null) {
@@ -308,7 +315,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     ]);
     _reconnectTimer?.cancel();
     _sub?.cancel();
-    _socket.sink.close();
+    if (!_navigatingToLobby) _socket.sink.close();
     super.dispose();
   }
 
@@ -366,6 +373,30 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
         });
         // fall through to normal game_state handling
       }
+      // Игра закончилась пока мы реконнектились — сервер вернул нас в лобби
+      if (type == 'room_joined') return; // ждём room_state
+      if (type == 'room_state') {
+        _reconnectTimer?.cancel();
+        if (!mounted) return;
+        setState(() => _navigatingToLobby = true);
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => LobbyScreen(
+              host: widget.host,
+              port: widget.port,
+              tls: widget.tls,
+              token: widget.token,
+              resumeSocket: _socket,
+              resumeStream: _currentStream,
+              resumeRoomId: widget.roomId,
+              resumePlayerId: widget.myPlayerId,
+              resumeRoomStateMsg: map,
+            ),
+          ),
+        );
+        return;
+      }
     }
 
     if (type == 'game_state') {
@@ -413,6 +444,9 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
           }
         });
       }
+    } else if (type == 'room_state') {
+      // Партия завершена, сервер вернул комнату в лобби
+      setState(() => _pendingRoomState = map);
     } else if (type == 'error') {
       setState(() => _error = map['message'] as String);
     }
@@ -535,7 +569,10 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
       final stream = ws.stream
           .map((data) => jsonDecode(data as String) as Map<String, dynamic>)
           .asBroadcastStream();
-      setState(() => _socket = ws);
+      setState(() {
+        _socket = ws;
+        _currentStream = stream;
+      });
       _sub = stream.listen(_onData, onDone: _onDone, onError: _onError);
       ws.sink.add(jsonEncode({'type': 'auth', 'token': widget.token}));
     } catch (_) {
@@ -1687,17 +1724,26 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
             ],
             const SizedBox(height: 32),
             FilledButton(
-              onPressed: () => Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => LobbyScreen(
-                    host: widget.host,
-                    port: widget.port,
-                    tls: widget.tls,
-                    token: widget.token,
+              onPressed: () {
+                final pending = _pendingRoomState;
+                setState(() => _navigatingToLobby = true);
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => LobbyScreen(
+                      host: widget.host,
+                      port: widget.port,
+                      tls: widget.tls,
+                      token: widget.token,
+                      resumeSocket: _socket,
+                      resumeStream: _currentStream,
+                      resumeRoomId: widget.roomId,
+                      resumePlayerId: widget.myPlayerId,
+                      resumeRoomStateMsg: pending,
+                    ),
                   ),
-                ),
-              ),
+                );
+              },
               child: const Text('В лобби'),
             ),
           ],

@@ -115,14 +115,23 @@ Map<String, dynamic> roomJoinedMsg(String roomId, String playerId) => {
 
 Map<String, dynamic> roomStateMsg(
   String roomId,
-  List<({String id, String nickname})> players,
+  List<({String id, String nickname, int gamesPlayed, int wins, int losses, int draws})> players,
   bool started,
 ) =>
     {
       'type': 'room_state',
       'roomId': roomId,
       'players': players
-          .map((p) => {'id': p.id, 'nickname': p.nickname})
+          .map((p) => {
+                'id': p.id,
+                'nickname': p.nickname,
+                'stats': {
+                  'gamesPlayed': p.gamesPlayed,
+                  'wins': p.wins,
+                  'losses': p.losses,
+                  'draws': p.draws,
+                },
+              })
           .toList(),
       'started': started,
     };
