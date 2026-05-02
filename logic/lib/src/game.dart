@@ -291,18 +291,17 @@ class Game {
       'Cards must share a rank already on the table',
     );
 
-    // Hand-size check is skipped in taking phase — defender takes everything.
+    final uncoveredNow = state.table.entries.where((e) => e.isUndefended).length;
     if (state.phase != GamePhase.taking) {
-      final uncoveredNow = state.table.entries.where((e) => e.isUndefended).length;
       _require(
         uncoveredNow + cards.length <= player.handSize,
         'Cannot add cards: uncovered cards on table would reach or exceed your hand size',
       );
-      _require(
-        uncoveredNow + cards.length <= state.defender.handSize,
-        'Defender does not have enough cards to cover',
-      );
     }
+    _require(
+      uncoveredNow + cards.length <= state.defender.handSize,
+      'Defender does not have enough cards to cover',
+    );
     _require(
       state.table.size + cards.length <= _effectiveMax,
       'Too many cards on table (max $_effectiveMax)',
@@ -392,9 +391,10 @@ class Game {
   /// Executes take immediately if no eligible player has cards to pile on.
   void _checkAutoEndTake() {
     if (state.phase != GamePhase.taking) return;
+    final uncoveredNow = state.table.entries.where((e) => e.isUndefended).length;
     final anyCanAdd = _addingPlayerIds().any((id) {
       final p = state.players.firstWhere((p) => p.id == id);
-      return !p.hasLeft && p.hasCards;
+      return !p.hasLeft && p.hasCards && uncoveredNow < state.defender.handSize;
     });
     if (!anyCanAdd) _executeTake();
   }
