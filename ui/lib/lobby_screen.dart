@@ -24,6 +24,10 @@ class LobbyScreen extends StatefulWidget {
   final String? resumePlayerId;
   final Map<String, dynamic>? resumeRoomStateMsg;
 
+  /// Режим восстановления сессии после обновления страницы.
+  /// Если задан — отправляем rejoin_room вместо create/join.
+  final String? rejoinRoomId;
+
   const LobbyScreen({
     super.key,
     required this.host,
@@ -36,6 +40,7 @@ class LobbyScreen extends StatefulWidget {
     this.resumeRoomId,
     this.resumePlayerId,
     this.resumeRoomStateMsg,
+    this.rejoinRoomId,
   });
 
   @override
@@ -63,13 +68,16 @@ class _LobbyScreenState extends State<LobbyScreen>
 
   bool get _isResuming => widget.resumeSocket != null;
 
-  // В resume-режиме любой игрок может начать следующую партию
-  bool get _isCreator => widget.joinRoomId == null || _isResuming;
+  // В resume/rejoin-режиме любой игрок может начать следующую партию
+  bool get _isCreator =>
+      widget.joinRoomId == null || _isResuming || widget.rejoinRoomId != null;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Сразу фиксируем roomId, чтобы он был доступен до первого сообщения сервера
+    if (widget.rejoinRoomId != null) _roomId = widget.rejoinRoomId;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       if (_isResuming) {
@@ -151,9 +159,16 @@ class _LobbyScreenState extends State<LobbyScreen>
   void _onMessage(Map<String, dynamic> map) {
     switch (map['type'] as String) {
       case 'auth_ok':
-        if (mounted) setState(() => _status = _Status.connected);
-        // Step 2: now join or create room
-        if (_isCreator) {
+        if (mounted) {
+          setState(() {
+            _status = _Status.connected;
+            // playerId на сервере совпадает с userId из auth_ok
+            _myPlayerId = map['userId'] as String;
+          });
+        }
+        if (widget.rejoinRoomId != null) {
+          _send({'type': 'rejoin_room', 'roomId': widget.rejoinRoomId});
+        } else if (_isCreator) {
           _send({'type': 'create_room'});
         } else {
           _send({'type': 'join_room', 'roomId': widget.joinRoomId});
@@ -165,6 +180,7 @@ class _LobbyScreenState extends State<LobbyScreen>
             _roomId = map['roomId'] as String;
             _myPlayerId = map['playerId'] as String;
           });
+          AppSettings.saveRoomSession(map['roomId'] as String);
         }
 
       case 'room_state':
@@ -174,6 +190,10 @@ class _LobbyScreenState extends State<LobbyScreen>
             _players = _parsePlayerList(map['players'] as List);
           });
         }
+
+      case 'player_left':
+        final pid = map['playerId'] as String;
+        if (mounted) setState(() => _players.removeWhere((p) => p.id == pid));
 
       case 'game_state':
         _latestGameState = map;
@@ -207,8 +227,12 @@ class _LobbyScreenState extends State<LobbyScreen>
       case 'error':
         final msg = map['message'] as String;
         if (msg == 'bad_token' || msg == 'auth_timeout') {
-          // Token rejected — clear auth and go back
           AppSettings.clearAuth();
+          if (mounted) Navigator.pop(context);
+          return;
+        }
+        if (msg == 'room_not_found' || msg == 'rejoin_failed') {
+          AppSettings.clearRoomSession();
           if (mounted) Navigator.pop(context);
           return;
         }
@@ -255,6 +279,7 @@ class _LobbyScreenState extends State<LobbyScreen>
   }
 
   void _leave() {
+    AppSettings.clearRoomSession();
     _send({'type': 'leave_room'});
     _socket?.sink.close();
     if (mounted) Navigator.pop(context);

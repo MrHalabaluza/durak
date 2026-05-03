@@ -73,13 +73,21 @@ void _rejoin(Connection conn, String roomId) {
     return;
   }
   if (!room.rejoinPlayer(conn)) {
-    conn.send(errorMsg('rejoin_failed'));
-    return;
+    if (room.isStarted) {
+      // Игра идёт, но игрока нет среди отключившихся — отказ
+      conn.send(errorMsg('rejoin_failed'));
+      return;
+    }
+    // Лобби — игра ещё не началась, разрешаем вернуться как новому игроку
+    conn.nickname = conn.username!;
+    if (!room.addPlayer(conn)) {
+      conn.send(errorMsg('rejoin_failed'));
+      return;
+    }
   }
   if (room.isStarted) {
     room.sendGameStateTo(conn);
   } else {
-    // Игра уже закончилась — возвращаем игрока в лобби той же комнаты
     conn.send(roomJoinedMsg(room.id, conn.playerId!));
     room.broadcast(roomStateMsg(room.id, room.playerEntries, false));
   }

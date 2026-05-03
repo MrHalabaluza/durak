@@ -50,7 +50,8 @@ class _SetupScreenState extends State<SetupScreen> {
   }
 
   Future<void> _loadSettings() async {
-    final s = await AppSettings.load();
+    final (s, savedRoomId) =
+        await (AppSettings.load(), AppSettings.loadRoomId()).wait;
     if (!mounted) return;
     setState(() {
       _settings = s;
@@ -58,7 +59,24 @@ class _SetupScreenState extends State<SetupScreen> {
     });
     if (s.token == null) {
       _goToAuth();
+    } else if (savedRoomId != null) {
+      _rejoinRoom(savedRoomId);
     }
+  }
+
+  void _rejoinRoom(String roomId) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LobbyScreen(
+          host: _settings.serverHost,
+          port: _settings.serverPort,
+          tls: _settings.serverTls,
+          token: _settings.token!,
+          rejoinRoomId: roomId,
+        ),
+      ),
+    ).then((_) { if (mounted) _loadSettings(); });
   }
 
   void _goToAuth() {

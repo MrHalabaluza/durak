@@ -23,6 +23,7 @@ class AppSettings {
   static const _keyUsername = 'username';
   static const _keyAvatarUrl = 'avatar_url';
   static const _keyToken = 'auth_token';
+  static const _keyRoomId = 'session_room_id';
 
   static const _secureStorage = FlutterSecureStorage();
 
@@ -147,5 +148,21 @@ class AppSettings {
     await prefs.remove(_keyUserId);
     await prefs.remove(_keyUsername);
     await prefs.remove(_keyAvatarUrl);
+    await prefs.remove(_keyRoomId);
+  }
+
+  static Future<void> saveRoomSession(String roomId) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyRoomId, roomId);
+  }
+
+  static Future<String?> loadRoomId() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_keyRoomId);
+  }
+
+  static Future<void> clearRoomSession() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_keyRoomId);
   }
 }
