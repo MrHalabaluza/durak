@@ -64,6 +64,16 @@ class _SetupScreenState extends State<SetupScreen> {
     }
   }
 
+  // Перезагружает настройки после возврата из лобби/игры.
+  // В отличие от _loadSettings, не запускает автоматический rejoin —
+  // иначе pushReplacement внутри LobbyScreen провоцировал бы бесконечный цикл.
+  Future<void> _reloadAfterLobby() async {
+    final s = await AppSettings.load();
+    if (!mounted) return;
+    setState(() => _settings = s);
+    if (s.token == null) _goToAuth();
+  }
+
   void _rejoinRoom(String roomId) {
     Navigator.push(
       context,
@@ -76,7 +86,7 @@ class _SetupScreenState extends State<SetupScreen> {
           rejoinRoomId: roomId,
         ),
       ),
-    ).then((_) { if (mounted) _loadSettings(); });
+    ).then((_) { if (mounted) _reloadAfterLobby(); });
   }
 
   void _goToAuth() {
@@ -128,7 +138,7 @@ class _SetupScreenState extends State<SetupScreen> {
           token: token,
         ),
       ),
-    ).then((_) { if (mounted) _loadSettings(); });
+    ).then((_) { if (mounted) _reloadAfterLobby(); });
   }
 
   Future<void> _joinRoom() async {
@@ -150,7 +160,7 @@ class _SetupScreenState extends State<SetupScreen> {
           joinRoomId: code,
         ),
       ),
-    ).then((_) { if (mounted) _loadSettings(); });
+    ).then((_) { if (mounted) _reloadAfterLobby(); });
   }
 
   @override
