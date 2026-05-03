@@ -27,7 +27,7 @@ String _cardStr(Card c) {
 class _LogEntry {
   final DateTime timestamp;
   final String actorNickname;
-  final String type; // 'attack','add_attack','defend','transfer','take','beat'
+  final String type; // 'attack','add_attack','defend','transfer','take','beat','connected','disconnected'
   final List<Card> cards;
 
   const _LogEntry({
@@ -45,9 +45,11 @@ class _LogEntry {
       'add_attack' => '$aподкинул$cStr',
       'defend'     => '$aотбил$cStr',
       'transfer'   => '$aперевёл$cStr',
-      'take'       => '$aвзял карты',
-      'beat'       => 'Бито',
-      _            => '$a$type$cStr',
+      'take'         => '$aвзял карты',
+      'beat'         => 'Бито',
+      'connected'    => '${actorNickname.isEmpty ? 'Игрок' : actorNickname} подключился',
+      'disconnected' => '${actorNickname.isEmpty ? 'Игрок' : actorNickname} отключился',
+      _              => '$a$type$cStr',
     };
   }
 }
@@ -373,6 +375,26 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     }
 
     String nick(_RemotePlayer p) => p.nickname.isEmpty ? 'Игрок' : p.nickname;
+
+    // Подключение / отключение игроков
+    final minLen = prev.players.length < next.players.length
+        ? prev.players.length
+        : next.players.length;
+    for (var i = 0; i < minLen; i++) {
+      final pp = prev.players[i];
+      final np = next.players[i];
+      if (!pp.hasLeft && np.hasLeft) {
+        _log.add(_LogEntry(
+            timestamp: DateTime.now(),
+            actorNickname: nick(pp),
+            type: 'disconnected'));
+      } else if (pp.hasLeft && !np.hasLeft) {
+        _log.add(_LogEntry(
+            timestamp: DateTime.now(),
+            actorNickname: nick(np),
+            type: 'connected'));
+      }
+    }
 
     final prevAttacks = prev.table.map((e) => e.attack).toSet();
     final nextAttacks = next.table.map((e) => e.attack).toSet();
