@@ -53,6 +53,18 @@ class Room {
 
   bool rejoinPlayer(Connection conn) {
     final pid = conn.playerId!;
+    // Гонка: новый WS пришёл до того, как onClose старого успел сработать.
+    // Старое соединение — «зомби» в _connections, но ещё не в _disconnectedPlayers.
+    // Вытесняем его и эмулируем disconnect вручную.
+    final oldIdx = _connections.indexWhere((c) => c.playerId == pid);
+    if (oldIdx >= 0) {
+      final old = _connections.removeAt(oldIdx);
+      old.room = null;
+      if (isStarted && _game!.state.phase != GamePhase.finished) {
+        _disconnectedPlayers[pid] = old.nickname;
+      }
+      old.close(); // onClose увидит room==null и ничего не сделает
+    }
     if (!_disconnectedPlayers.containsKey(pid)) return false;
     conn.nickname = _disconnectedPlayers.remove(pid)!;
     _connections.add(conn);
