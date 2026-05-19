@@ -1165,8 +1165,9 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
 
   Widget _buildDeckStatus(_RemoteGS gs) {
     if (gs.deckSize == 0) return SizedBox(key: _deckKey, width: kCardWidth);
-    return Column(
+    return SizedBox(
       key: _deckKey,
+      child: Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         SizedBox(
@@ -1198,25 +1199,28 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
           style: const TextStyle(color: Colors.grey, fontSize: 11),
         ),
       ],
+    ),
     );
   }
 
   Widget _buildDiscardStatus(_RemoteGS gs) {
     if (gs.discardSize == 0) return SizedBox(key: _discardKey, width: kCardWidth);
-    return Column(
+    return SizedBox(
       key: _discardKey,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Transform.rotate(
-          angle: 0.12,
-          child: const CardWidget(faceUp: false, width: kCardWidth),
-        ),
-        const SizedBox(height: 3),
-        Text(
-          '${gs.discardSize}',
-          style: const TextStyle(color: Colors.grey, fontSize: 11),
-        ),
-      ],
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Transform.rotate(
+            angle: 0.12,
+            child: const CardWidget(faceUp: false, width: kCardWidth),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            '${gs.discardSize}',
+            style: const TextStyle(color: Colors.grey, fontSize: 11),
+          ),
+        ],
+      ),
     );
   }
 
