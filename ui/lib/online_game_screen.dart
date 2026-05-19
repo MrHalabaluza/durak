@@ -225,21 +225,19 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
   final _seatKeys      = List.generate(6, (_) => GlobalKey());
   // ключи на каждую из 9 ячеек грида стола (по индексу 0..8)
   final _tableCellKeys = List.generate(9, (_) => GlobalKey());
-  // ключи на конкретные слоты руки (по displayId карты, лениво)
+  // ключи на конкретные слоты руки (по card.id, лениво)
   final Map<int, GlobalKey> _handSlotKeys = {};
-  GlobalKey _handSlotKey(int displayId) =>
-      _handSlotKeys.putIfAbsent(displayId, () => GlobalKey());
+  GlobalKey _handSlotKey(int cardId) =>
+      _handSlotKeys.putIfAbsent(cardId, () => GlobalKey());
 
   // Overlay-анимация
   final _flying     = <_FlyingCard>[];
   int  _nextFlyId   = 0;
   bool _animating   = false;
   int  _animGeneration = 0;
-  // displayId карты, перенесённой drag-and-drop — её анимация пропускается,
-  // так как пользователь уже видел перемещение во время drag.
+  // card.id карты, перенесённой drag-and-drop — её анимация пропускается.
   int? _lastDraggedCardId;
-  // displayId карт, которые сейчас в полёте — статичный слой их скрывает,
-  // чтобы карта не была одновременно видна и в overlay, и в hand/table.
+  // card.id карт, которые сейчас в полёте — статичный слой их скрывает.
   final Set<int> _hiddenCardIds = {};
 
   @override
@@ -331,10 +329,9 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
       final prevTableCellPositions = <int, Offset>{};
       if (prev != null) {
         for (final card in prev.hand) {
-          final id = cardDisplayId(card);
-          final key = _handSlotKeys[id];
+          final key = _handSlotKeys[card.id];
           if (key?.currentContext != null) {
-            prevHandPositions[id] = _anchorOf(key!);
+            prevHandPositions[card.id] = _anchorOf(key!);
           }
         }
         for (int i = 0;
@@ -498,7 +495,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     Future.delayed(startDelay, () {
       if (!mounted || gen != _animGeneration) return;
       final id = _nextFlyId++;
-      final cid = card != null ? cardDisplayId(card) : null;
+      final cid = card?.id;
       setState(() {
         _flying.add(_FlyingCard(
           id: id,
@@ -582,8 +579,8 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     /// Текущая позиция слота руки (для целей DEAL/TAKE-в-мою-руку).
     /// Если слот не смонтирован (карта была скрыта или ещё не появилась),
     /// fallback на общий handPos.
-    Offset handSlotPos(int displayId) {
-      final key = _handSlotKeys[displayId];
+    Offset handSlotPos(int cardId) {
+      final key = _handSlotKeys[cardId];
       if (key?.currentContext != null) {
         final p = _anchorOf(key!);
         if (p != Offset.zero) return p;
@@ -595,7 +592,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     /// Если это я и снапшот есть — точка слота из prev; иначе — seat/hand.
     Offset srcFromPlayer(Card card, int pi) {
       if (pi == myIndex) {
-        final p = prevHandPositions[cardDisplayId(card)];
+        final p = prevHandPositions[card.id];
         if (p != null) return p;
         return handPos;
       }
@@ -664,7 +661,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
       if (newCards.isNotEmpty) {
         // TRANSFER: новая карта(ы) кладётся на стол
         for (final card in newCards) {
-          if (cardDisplayId(card) == draggedId) continue;
+          if (card.id == draggedId) continue;
           _fly(card: card, faceUp: true,
               from: srcFromPlayer(card, prev.defenderIndex),
               to: tableDest(card),
@@ -707,7 +704,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     // в этой ветке — игрок, который только что подкинул карту.
     if (prev.defenderIndex == next.defenderIndex) {
       for (final card in nextAttacks.difference(prevAttacks)) {
-        if (cardDisplayId(card) == draggedId) continue;
+        if (card.id == draggedId) continue;
         final srcIndex =
             prev.table.isEmpty ? next.attackerIndex : prev.currentAdderIndex;
         _fly(card: card, faceUp: true,
@@ -720,7 +717,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     // DEFEND: карта защиты из руки на стол
     for (final ne in next.table) {
       if (ne.defense == null) continue;
-      if (cardDisplayId(ne.defense!) == draggedId) continue;
+      if (ne.defense!.id == draggedId) continue;
       final pe = prev.table.where((e) => e.attack == ne.attack).firstOrNull;
       if (pe != null && pe.defense == null) {
         _fly(card: ne.defense, faceUp: true,
@@ -740,16 +737,15 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
       final takenIds = isTake
           ? prev.table
               .expand<Card>((e) => [e.attack, if (e.defense != null) e.defense!])
-              .map(cardDisplayId)
+              .map((c) => c.id)
               .toSet()
           : const <int>{};
 
-      final prevHandIds = prev.hand.map(cardDisplayId).toSet();
+      final prevHandIds = prev.hand.map((c) => c.id).toSet();
       for (final card in next.hand) {
-        final id = cardDisplayId(card);
-        if (!prevHandIds.contains(id) && !takenIds.contains(id)) {
+        if (!prevHandIds.contains(card.id) && !takenIds.contains(card.id)) {
           _fly(card: card, faceUp: true,
-              from: deckPos, to: handSlotPos(id),
+              from: deckPos, to: handSlotPos(card.id),
               startDelay: step * seq++);
         }
       }
@@ -796,7 +792,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
   // ── Helpers ───────────────────────────────────────────────────────────────
 
   List<Card> get _selectedCards => _gs!.hand
-      .where((c) => _selectedCardIds.contains(cardDisplayId(c)))
+      .where((c) => _selectedCardIds.contains(c.id))
       .toList();
 
   bool get _imAttacker =>
@@ -857,29 +853,29 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
 
   void _take() => _doAction({'type': 'take'});
 
-  Card? _cardByDisplayId(_RemoteGS gs, int displayId) =>
-      gs.hand.where((c) => cardDisplayId(c) == displayId).firstOrNull;
+  Card? _cardById(_RemoteGS gs, int id) =>
+      gs.hand.where((c) => c.id == id).firstOrNull;
 
-  void _attackByDrag(_RemoteGS gs, int displayId) {
-    final dragged = _cardByDisplayId(gs, displayId);
+  void _attackByDrag(_RemoteGS gs, int cardId) {
+    final dragged = _cardById(gs, cardId);
     if (dragged == null) return;
     final cards =
-        _selectedCardIds.contains(displayId) && _selectedCardIds.isNotEmpty
+        _selectedCardIds.contains(cardId) && _selectedCardIds.isNotEmpty
             ? _selectedCards
             : [dragged];
     final isAdding =
         gs.phase == GamePhase.adding || gs.phase == GamePhase.taking;
-    _lastDraggedCardId = displayId;
+    _lastDraggedCardId = cardId;
     _doAction({
       'type': isAdding ? 'add_attack' : 'attack',
       'cards': cards.map(_serCard).toList(),
     });
   }
 
-  void _defendByDrag(Card attackCard, int displayId) {
-    final defense = _cardByDisplayId(_gs!, displayId);
+  void _defendByDrag(Card attackCard, int cardId) {
+    final defense = _cardById(_gs!, cardId);
     if (defense == null) return;
-    _lastDraggedCardId = displayId;
+    _lastDraggedCardId = cardId;
     _doAction({
       'type': 'defend',
       'attackCard': _serCard(attackCard),
@@ -887,13 +883,13 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     });
   }
 
-  void _transferByDrag(_RemoteGS gs, int displayId) {
-    final dragged = _cardByDisplayId(gs, displayId);
+  void _transferByDrag(_RemoteGS gs, int cardId) {
+    final dragged = _cardById(gs, cardId);
     if (dragged == null) return;
-    final cards = _selectedCardIds.contains(displayId) && _selectedCardIds.isNotEmpty
+    final cards = _selectedCardIds.contains(cardId) && _selectedCardIds.isNotEmpty
         ? _selectedCards
         : [dragged];
-    _lastDraggedCardId = displayId;
+    _lastDraggedCardId = cardId;
     _doAction({
       'type': 'transfer',
       'cards': cards.map(_serCard).toList(),
@@ -1322,7 +1318,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
   Widget _tableCell(_RemoteGS gs, int i) {
     if (i >= gs.table.length) return _buildEmptyTableCell(gs);
     final entry = gs.table[i];
-    if (_hiddenCardIds.contains(cardDisplayId(entry.attack))) {
+    if (_hiddenCardIds.contains(entry.attack.id)) {
       return _buildEmptyTableCell(gs);
     }
     return _buildTableEntry(entry, gs);
@@ -1390,7 +1386,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
                   highlighted: canDefend && !isSelected && !hovering,
                 ),
                 if (entry.defense != null &&
-                    !_hiddenCardIds.contains(cardDisplayId(entry.defense!)))
+                    !_hiddenCardIds.contains(entry.defense!.id))
                   Positioned(
                     top: 16,
                     left: 16,
@@ -1425,15 +1421,15 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
         children: [
           for (final card in sorted)
             Padding(
-              key: _handSlotKey(cardDisplayId(card)),
+              key: _handSlotKey(card.id),
               padding: const EdgeInsets.only(right: 6),
               child: Visibility(
-                visible: !_hiddenCardIds.contains(cardDisplayId(card)),
+                visible: !_hiddenCardIds.contains(card.id),
                 maintainSize: true,
                 maintainAnimation: true,
                 maintainState: true,
                 child: Draggable<int>(
-                    data: cardDisplayId(card),
+                    data: card.id,
                     maxSimultaneousDrags: _animating ? 0 : 1,
                     feedback: Material(
                       color: Colors.transparent,
@@ -1448,13 +1444,12 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
                     ),
                     child: CardWidget(
                       card: card,
-                      selected: _selectedCardIds.contains(cardDisplayId(card)),
+                      selected: _selectedCardIds.contains(card.id),
                       onTap: _animating ? null : () => setState(() {
-                        final id = cardDisplayId(card);
-                        if (_selectedCardIds.contains(id)) {
-                          _selectedCardIds.remove(id);
+                        if (_selectedCardIds.contains(card.id)) {
+                          _selectedCardIds.remove(card.id);
                         } else {
-                          _selectedCardIds.add(id);
+                          _selectedCardIds.add(card.id);
                         }
                       }),
                     ),
