@@ -152,7 +152,6 @@ class _FlyingCard {
   final Card? card;
   final bool faceUp;
   final Offset from;
-  final Offset? via;
   final Offset to;
   final Duration duration;
   const _FlyingCard({
@@ -160,7 +159,6 @@ class _FlyingCard {
     required this.card,
     required this.faceUp,
     required this.from,
-    this.via,
     required this.to,
     this.duration = const Duration(milliseconds: 200),
   });
@@ -213,10 +211,10 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
   final _seatKeys      = List.generate(6, (_) => GlobalKey());
   // ключи на каждую из 9 ячеек грида стола (по индексу 0..8)
   final _tableCellKeys = List.generate(9, (_) => GlobalKey());
-  // ключи на слоты руки (по sortedIndex — всегда уникален, безопасен при дублях карт)
+  // ключи на конкретные слоты руки (по displayId карты, лениво)
   final Map<int, GlobalKey> _handSlotKeys = {};
-  GlobalKey _handSlotKey(int index) =>
-      _handSlotKeys.putIfAbsent(index, () => GlobalKey());
+  GlobalKey _handSlotKey(int displayId) =>
+      _handSlotKeys.putIfAbsent(displayId, () => GlobalKey());
 
   // Overlay-анимация
   final _flying     = <_FlyingCard>[];
@@ -318,10 +316,9 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
       final prevHandPositions = <int, Offset>{};
       final prevTableCellPositions = <int, Offset>{};
       if (prev != null) {
-        final prevSorted = sortHand(prev.hand, prev.trump);
-        for (int i = 0; i < prevSorted.length; i++) {
-          final id = cardDisplayId(prevSorted[i]);
-          final key = _handSlotKeys[i];
+        for (final card in prev.hand) {
+          final id = cardDisplayId(card);
+          final key = _handSlotKeys[id];
           if (key?.currentContext != null) {
             prevHandPositions[id] = _anchorOf(key!);
           }
@@ -459,7 +456,6 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     required Card? card,
     required bool faceUp,
     required Offset from,
-    Offset? via,
     required Offset to,
     Duration duration = const Duration(milliseconds: 200),
     Duration startDelay = Duration.zero,
@@ -475,7 +471,6 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
           card: card,
           faceUp: faceUp,
           from: from,
-          via: via,
           to: to,
           duration: duration,
         ));
@@ -551,17 +546,13 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     Offset seatPos(int pi) => _anchorOf(_seatKeys[pi]);
 
     /// Текущая позиция слота руки (для целей DEAL/TAKE-в-мою-руку).
-    /// Ищет первый слот с совпадающим displayId в отсортированной руке.
-    /// Fallback на общий handPos, если слот не смонтирован.
+    /// Если слот не смонтирован (карта была скрыта или ещё не появилась),
+    /// fallback на общий handPos.
     Offset handSlotPos(int displayId) {
-      final sorted = sortHand(next.hand, next.trump);
-      final idx = sorted.indexWhere((c) => cardDisplayId(c) == displayId);
-      if (idx >= 0) {
-        final key = _handSlotKeys[idx];
-        if (key?.currentContext != null) {
-          final p = _anchorOf(key!);
-          if (p != Offset.zero) return p;
-        }
+      final key = _handSlotKeys[displayId];
+      if (key?.currentContext != null) {
+        final p = _anchorOf(key!);
+        if (p != Offset.zero) return p;
       }
       return handPos;
     }
@@ -601,11 +592,11 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
         next.discardSize > prev.discardSize) {
       for (int i = 0; i < prev.table.length; i++) {
         final e = prev.table[i];
-        _fly(card: e.attack, faceUp: false,
+        _fly(card: e.attack, faceUp: true,
             from: prevTableSrc(i), to: discardPos,
             startDelay: step * seq++);
         if (e.defense != null) {
-          _fly(card: e.defense, faceUp: false,
+          _fly(card: e.defense, faceUp: true,
               from: prevTableSrc(i, shift: const Offset(16, 16)),
               to: discardPos,
               startDelay: step * seq++);
@@ -617,14 +608,15 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     if (prev.table.isNotEmpty &&
         next.table.isEmpty &&
         next.discardSize == prev.discardSize) {
-      final dest = prev.defenderIndex == myIndex ? handPos : seatPos(prev.defenderIndex);
+      final isMine = prev.defenderIndex == myIndex;
+      final dest = isMine ? handPos : seatPos(prev.defenderIndex);
       for (int i = 0; i < prev.table.length; i++) {
         final e = prev.table[i];
-        _fly(card: e.attack, faceUp: false,
+        _fly(card: e.attack, faceUp: isMine,
             from: prevTableSrc(i), to: dest,
             startDelay: step * seq++);
         if (e.defense != null) {
-          _fly(card: e.defense, faceUp: false,
+          _fly(card: e.defense, faceUp: isMine,
               from: prevTableSrc(i, shift: const Offset(16, 16)),
               to: dest,
               startDelay: step * seq++);
@@ -646,52 +638,32 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
         }
       } else {
         // TRANSIT: козырь нужного ранга показан и остаётся в руке.
-        const transitDuration = Duration(milliseconds: 700);
+        // Визуально — карта вылетает из руки/посадки бывшего защитника
+        // в сторону нового и исчезает; в статике она вернётся в руку,
+        // т.к. _hiddenCardIds сбросится по завершении полёта.
         final fromIdx = prev.defenderIndex;
+        final toIdx = next.defenderIndex;
+        final from = fromIdx == myIndex ? handPos : seatPos(fromIdx);
+        final to = toIdx == myIndex ? handPos : seatPos(toIdx);
+
+        Card? showCard;
+        bool faceUp = false;
         if (fromIdx == myIndex) {
-          // Свой транзит: карты поднимаются из руки и опускаются обратно
           final uncoveredRanks = next.table
               .where((e) => e.defense == null)
               .map((e) => e.attack.rank)
               .toSet();
-          final transitCards = next.hand
+          showCard = next.hand
               .where((c) =>
                   c.suit == next.trump && uncoveredRanks.contains(c.rank))
-              .toList();
-          for (final card in transitCards) {
-            final slotPos = handSlotPos(cardDisplayId(card));
-            _fly(
-              card: card, faceUp: true,
-              from: slotPos,
-              via: slotPos - const Offset(0, kCardHeight / 2),
-              to: slotPos,
-              duration: transitDuration,
-              startDelay: step * seq,
-            );
-          }
-          if (transitCards.isNotEmpty) seq++;
-        } else {
-          // Чужой транзит: карты рубашкой вверх появляются у посадки и исчезают
-          final seat = seatPos(fromIdx);
-          final count = prev.table
-              .where((e) => e.defense == null)
-              .length
-              .clamp(1, 3);
-          for (int k = 0; k < count; k++) {
-            final dx = count > 1
-                ? (k - (count - 1) / 2.0) * (kCardWidth + 4)
-                : 0.0;
-            _fly(
-              card: null, faceUp: false,
-              from: seat + Offset(dx, 0),
-              via: seat + Offset(dx, -kCardHeight / 2),
-              to: seat + Offset(dx, 0),
-              duration: transitDuration,
-              startDelay: step * seq,
-            );
-          }
-          seq++;
+              .firstOrNull;
+          faceUp = showCard != null;
         }
+
+        _fly(card: showCard, faceUp: faceUp,
+            from: from, to: to,
+            duration: const Duration(milliseconds: 300),
+            startDelay: step * seq++);
       }
     }
 
@@ -742,7 +714,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
       for (final card in next.hand) {
         final id = cardDisplayId(card);
         if (!prevHandIds.contains(id) && !takenIds.contains(id)) {
-          _fly(card: card, faceUp: false,
+          _fly(card: card, faceUp: true,
               from: deckPos, to: handSlotPos(id),
               startDelay: step * seq++);
         }
@@ -768,46 +740,21 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
       key: _overlayKey,
       children: [
         for (final fly in _flying)
-          if (fly.via != null)
-            TweenAnimationBuilder<double>(
-              key: ValueKey(fly.id),
-              tween: Tween(begin: 0.0, end: 1.0),
-              duration: fly.duration,
-              builder: (_, t, child) {
-                final Offset pos;
-                if (t <= 0.5) {
-                  pos = Offset.lerp(
-                      fly.from, fly.via!, Curves.easeOut.transform(t * 2))!;
-                } else {
-                  pos = Offset.lerp(
-                      fly.via!, fly.to, Curves.easeIn.transform((t - 0.5) * 2))!;
-                }
-                return Positioned(left: pos.dx, top: pos.dy, child: child!);
-              },
-              child: IgnorePointer(
-                child: CardWidget(
-                  card: fly.card,
-                  faceUp: fly.faceUp,
-                  width: kCardWidth,
-                ),
-              ),
-            )
-          else
-            TweenAnimationBuilder<Offset>(
-              key: ValueKey(fly.id),
-              tween: Tween(begin: fly.from, end: fly.to),
-              duration: fly.duration,
-              curve: Curves.easeInOut,
-              builder: (_, offset, child) =>
-                  Positioned(left: offset.dx, top: offset.dy, child: child!),
-              child: IgnorePointer(
-                child: CardWidget(
-                  card: fly.card,
-                  faceUp: fly.faceUp,
-                  width: kCardWidth,
-                ),
+          TweenAnimationBuilder<Offset>(
+            key: ValueKey(fly.id),
+            tween: Tween(begin: fly.from, end: fly.to),
+            duration: fly.duration,
+            curve: Curves.easeInOut,
+            builder: (_, offset, child) =>
+                Positioned(left: offset.dx, top: offset.dy, child: child!),
+            child: IgnorePointer(
+              child: CardWidget(
+                card: fly.card,
+                faceUp: fly.faceUp,
+                width: kCardWidth,
               ),
             ),
+          ),
       ],
     );
   }
@@ -1448,40 +1395,40 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       child: Row(
         children: [
-          for (final entry in sorted.asMap().entries)
+          for (final card in sorted)
             Padding(
-              key: _handSlotKey(entry.key),
+              key: _handSlotKey(cardDisplayId(card)),
               padding: const EdgeInsets.only(right: 6),
               child: Visibility(
-                visible: !_hiddenCardIds.contains(cardDisplayId(entry.value)),
+                visible: !_hiddenCardIds.contains(cardDisplayId(card)),
                 maintainSize: true,
                 maintainAnimation: true,
                 maintainState: true,
                 child: GestureDetector(
                   onVerticalDragEnd: (details) {
                     final vel = details.primaryVelocity ?? 0;
-                    if (vel < -500 && !_animating) _swipeUpCard(gs, entry.value);
+                    if (vel < -500 && !_animating) _swipeUpCard(gs, card);
                   },
                   child: LongPressDraggable<int>(
-                    data: cardDisplayId(entry.value),
+                    data: cardDisplayId(card),
                     maxSimultaneousDrags: _animating ? 0 : 1,
                     delay: const Duration(milliseconds: 180),
                     feedback: Material(
                       color: Colors.transparent,
                       child: Transform.scale(
                         scale: 1.1,
-                        child: CardWidget(card: entry.value, selected: true),
+                        child: CardWidget(card: card, selected: true),
                       ),
                     ),
                     childWhenDragging: Opacity(
                       opacity: 0.35,
-                      child: CardWidget(card: entry.value),
+                      child: CardWidget(card: card),
                     ),
                     child: CardWidget(
-                      card: entry.value,
-                      selected: _selectedCardIds.contains(cardDisplayId(entry.value)),
+                      card: card,
+                      selected: _selectedCardIds.contains(cardDisplayId(card)),
                       onTap: _animating ? null : () => setState(() {
-                        final id = cardDisplayId(entry.value);
+                        final id = cardDisplayId(card);
                         if (_selectedCardIds.contains(id)) {
                           _selectedCardIds.remove(id);
                         } else {
