@@ -1,3 +1,4 @@
+import 'dart:collection';
 import 'dart:math';
 import 'package:flutter/material.dart' hide Card;
 import 'package:flutter/services.dart';
@@ -42,11 +43,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Rank get _minRank => _cardRange == _CardRange.two ? Rank.two : Rank.six;
 
+  static HashMap<Card, int> _copyCountsMap(Map<Card, int> source) =>
+      HashMap<Card, int>(
+        equals: (a, b) => a.suit == b.suit && a.rank == b.rank,
+        hashCode: (c) => Object.hash(c.suit, c.rank),
+      )..addAll(source);
+
   @override
   void initState() {
     super.initState();
     final initial = widget.initial.deckConfig;
-    _counts = Map<Card, int>.from(initial.counts);
+    _counts = _copyCountsMap(initial.counts);
     _hostCtrl = TextEditingController(text: widget.initial.serverHost);
     _portCtrl = TextEditingController(text: '${widget.initial.serverPort}');
     _tls = widget.initial.serverTls;
@@ -80,7 +87,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() {
       _cardRange = range;
       if (_deckType == _DeckType.standard) {
-        _counts = Map.from(DeckConfig.preset(_minRank).counts);
+        _counts = _copyCountsMap(DeckConfig.preset(_minRank).counts);
       } else {
         final n = int.tryParse(_randomCountCtrl.text) ?? _total;
         _applyRandom(n > 0 ? n : 36);
@@ -92,13 +99,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() {
       _deckType = type;
       if (type == _DeckType.standard) {
-        _counts = Map.from(DeckConfig.preset(_minRank).counts);
+        _counts = _copyCountsMap(DeckConfig.preset(_minRank).counts);
       }
     });
   }
 
   void _applyRandom(int count) {
-    _counts = Map.from(DeckConfig.random(_minRank, count, Random()).counts);
+    _counts = _copyCountsMap(DeckConfig.random(_minRank, count, Random()).counts);
   }
 
   void _generateRandom() {
