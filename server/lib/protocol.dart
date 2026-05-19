@@ -196,7 +196,12 @@ DeckConfig _parseDeckConfig(List<dynamic> list) {
   for (final entry in list) {
     final map = entry as Map<String, dynamic>;
     final count = map['count'] as int;
-    if (count > 0) counts[_parseCard(map)] = count;
+    if (count > 0) {
+      counts[Card(
+        Suit.values.byName(map['suit'] as String),
+        Rank.values.byName(map['rank'] as String),
+      )] = count;
+    }
   }
   return DeckConfig.custom(counts);
 }
