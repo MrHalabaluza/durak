@@ -1404,14 +1404,17 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
 
   Widget _buildHand(_RemoteGS gs) {
     if (gs.hand.isEmpty) {
-      return Center(
+      return SizedBox(
         key: _handKey,
-        child: const Text('Нет карт', style: TextStyle(color: Colors.grey)),
+        child: const Center(
+          child: Text('Нет карт', style: TextStyle(color: Colors.grey)),
+        ),
       );
     }
     final sorted = sortHand(gs.hand, gs.trump);
-    return SingleChildScrollView(
+    return SizedBox(
       key: _handKey,
+      child: SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       child: Row(
@@ -1456,6 +1459,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
               ),
         ],
       ),
+    ),
     );
   }
 
