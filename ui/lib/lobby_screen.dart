@@ -51,7 +51,8 @@ class _LobbyScreenState extends State<LobbyScreen>
   DeckConfig _deckConfig = DeckConfig();
 
   bool get _isCreator => widget.joinRoomId == null;
-  bool get _isOwner => _myPlayerId != null && _myPlayerId == _ownerId;
+  bool get _isOwner => _myPlayerId != null &&
+      (_ownerId == null ? _isCreator : _myPlayerId == _ownerId);
 
   @override
   void initState() {
