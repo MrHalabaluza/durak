@@ -56,13 +56,14 @@ class _LogEntry {
 
 // ── Deserialization ───────────────────────────────────────────────────────────
 
-Card _parseCard(Map<String, dynamic> m) => Card(
+Card _parseCard(Map<String, dynamic> m) => Card.withId(
+      m['id'] as int,
       Suit.values.byName(m['suit'] as String),
       Rank.values.byName(m['rank'] as String),
     );
 
-Map<String, String> _serCard(Card c) =>
-    {'suit': c.suit.name, 'rank': c.rank.name};
+Map<String, dynamic> _serCard(Card c) =>
+    {'id': c.id, 'suit': c.suit.name, 'rank': c.rank.name};
 
 // ── Remote state model ────────────────────────────────────────────────────────
 

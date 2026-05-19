@@ -43,13 +43,15 @@ class _LobbyScreenState extends State<LobbyScreen>
 
   String? _roomId;
   String? _myPlayerId;
-  List<({String id, String nickname})> _players = [];
+  String? _ownerId;
+  List<({String id, String nickname, bool isBot})> _players = [];
   bool _gameStarted = false;
   Map<String, dynamic>? _latestGameState;
 
   DeckConfig _deckConfig = DeckConfig();
 
   bool get _isCreator => widget.joinRoomId == null;
+  bool get _isOwner => _myPlayerId != null && _myPlayerId == _ownerId;
 
   @override
   void initState() {
@@ -117,9 +119,14 @@ class _LobbyScreenState extends State<LobbyScreen>
         if (mounted) {
           setState(() {
             _roomId = map['roomId'] as String;
+            _ownerId = map['ownerId'] as String?;
             _players = (map['players'] as List).map((e) {
               final p = e as Map<String, dynamic>;
-              return (id: p['id'] as String, nickname: p['nickname'] as String? ?? '');
+              return (
+                id: p['id'] as String,
+                nickname: p['nickname'] as String? ?? '',
+                isBot: p['isBot'] as bool? ?? false,
+              );
             }).toList();
           });
         }
@@ -201,6 +208,9 @@ class _LobbyScreenState extends State<LobbyScreen>
     );
     if (result != null && mounted) setState(() => _deckConfig = result.deckConfig);
   }
+
+  void _addBot() => _send({'type': 'add_bot'});
+  void _removeBot(String botId) => _send({'type': 'remove_bot', 'botId': botId});
 
   void _leave() {
     _send({'type': 'leave_room'});
@@ -301,12 +311,12 @@ class _LobbyScreenState extends State<LobbyScreen>
                   style: const TextStyle(color: Colors.redAccent, fontSize: 13),
                   textAlign: TextAlign.center),
             ),
-          if (_isCreator)
+          if (_isOwner)
             FilledButton(
               onPressed: _players.length >= 2 ? _startGame : null,
               child: const Text('Начать игру'),
             ),
-          if (!_isCreator)
+          if (!_isOwner)
             const Center(
               child: Text('Ожидание начала игры от создателя комнаты...',
                   style: TextStyle(color: Colors.grey)),
@@ -391,6 +401,13 @@ class _LobbyScreenState extends State<LobbyScreen>
               const SizedBox(width: 8),
               Text('${_players.length}/6',
                   style: const TextStyle(color: Colors.grey, fontSize: 16)),
+              const Spacer(),
+              if (_isOwner && !_gameStarted && _players.length < 6)
+                TextButton.icon(
+                  onPressed: _addBot,
+                  icon: const Icon(Icons.smart_toy_outlined, size: 18),
+                  label: const Text('Добавить бота'),
+                ),
             ],
           ),
           const SizedBox(height: 12),
@@ -421,6 +438,7 @@ class _LobbyScreenState extends State<LobbyScreen>
   Widget _buildPlayerTile(int index) {
     final p = _players[index];
     final isMe = p.id == _myPlayerId;
+    final canRemove = _isOwner && p.isBot && !_gameStarted;
     return ListTile(
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8),
@@ -431,19 +449,33 @@ class _LobbyScreenState extends State<LobbyScreen>
       tileColor: isMe ? Theme.of(context).colorScheme.primary.withAlpha(20) : null,
       leading: CircleAvatar(
         backgroundColor: isMe ? Theme.of(context).colorScheme.primary : null,
-        child: Text('${index + 1}'),
+        child: p.isBot
+            ? Icon(Icons.smart_toy_outlined,
+                size: 20,
+                color: isMe ? Colors.white : null)
+            : Text('${index + 1}'),
       ),
       title: Text(
-        p.nickname.isEmpty ? 'Игрок ${index + 1}' : p.nickname,
+        p.nickname.isEmpty
+            ? (p.isBot ? 'Бот ${index + 1}' : 'Игрок ${index + 1}')
+            : p.nickname,
         style: isMe
             ? TextStyle(
                 fontWeight: FontWeight.bold,
                 color: Theme.of(context).colorScheme.primary)
             : null,
       ),
-      trailing: isMe
-          ? Icon(Icons.person, color: Theme.of(context).colorScheme.primary)
-          : null,
+      trailing: canRemove
+          ? IconButton(
+              icon: const Icon(Icons.remove_circle_outline,
+                  color: Colors.redAccent),
+              tooltip: 'Убрать бота',
+              onPressed: () => _removeBot(p.id),
+            )
+          : (isMe
+              ? Icon(Icons.person,
+                  color: Theme.of(context).colorScheme.primary)
+              : null),
     );
   }
 }

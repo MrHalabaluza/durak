@@ -28,6 +28,8 @@ sealed class ClientMessage {
       'add_attack' => AddAttackMsg(_parseCards(map['cards'] as List)),
       'pass' => const PassMsg(),
       'take' => const TakeMsg(),
+      'add_bot' => const AddBotMsg(),
+      'remove_bot' => RemoveBotMsg(map['botId'] as String),
       'auth' => AuthMsg(map['token'] as String),
       final t => throw FormatException('Unknown message type: $t'),
     };
@@ -93,6 +95,15 @@ class TakeMsg extends ClientMessage {
   const TakeMsg();
 }
 
+class AddBotMsg extends ClientMessage {
+  const AddBotMsg();
+}
+
+class RemoveBotMsg extends ClientMessage {
+  final String botId;
+  const RemoveBotMsg(this.botId);
+}
+
 // ── Outgoing message builders ───────────────────────────────────────────────
 
 Map<String, dynamic> errorMsg(String message) =>
@@ -109,14 +120,16 @@ Map<String, dynamic> roomJoinedMsg(String roomId, String playerId) => {
 
 Map<String, dynamic> roomStateMsg(
   String roomId,
-  List<({String id, String nickname})> players,
-  bool started,
-) =>
+  List<({String id, String nickname, bool isBot})> players,
+  bool started, {
+  String? ownerId,
+}) =>
     {
       'type': 'room_state',
       'roomId': roomId,
+      'ownerId': ownerId,
       'players': players
-          .map((p) => {'id': p.id, 'nickname': p.nickname})
+          .map((p) => {'id': p.id, 'nickname': p.nickname, 'isBot': p.isBot})
           .toList(),
       'started': started,
     };
@@ -166,10 +179,11 @@ Map<String, dynamic> gameStateMsg(
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-Map<String, String> _serializeCard(Card card) =>
-    {'suit': card.suit.name, 'rank': card.rank.name};
+Map<String, dynamic> _serializeCard(Card card) =>
+    {'id': card.id, 'suit': card.suit.name, 'rank': card.rank.name};
 
-Card _parseCard(Map<String, dynamic> map) => Card(
+Card _parseCard(Map<String, dynamic> map) => Card.withId(
+      map['id'] as int,
       Suit.values.byName(map['suit'] as String),
       Rank.values.byName(map['rank'] as String),
     );

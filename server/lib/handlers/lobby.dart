@@ -13,6 +13,10 @@ void handleLobby(Connection conn, ClientMessage msg) {
       _leave(conn);
     case StartGameMsg(:final deckConfig):
       _start(conn, deckConfig);
+    case AddBotMsg():
+      _addBot(conn);
+    case RemoveBotMsg(:final botId):
+      _removeBot(conn, botId);
     default:
   }
 }
@@ -26,7 +30,8 @@ void _create(Connection conn) {
   final room = RoomManager.instance.create();
   room.addPlayer(conn);
   conn.send(roomJoinedMsg(room.id, conn.playerId!));
-  conn.send(roomStateMsg(room.id, room.playerEntries, false));
+  conn.send(roomStateMsg(room.id, room.playerEntries, false,
+      ownerId: room.ownerId));
 }
 
 void _join(Connection conn, String roomId) {
@@ -45,7 +50,9 @@ void _join(Connection conn, String roomId) {
     return;
   }
   conn.send(roomJoinedMsg(room.id, conn.playerId!));
-  room.broadcast(roomStateMsg(room.id, room.playerEntries, room.isStarted));
+  room.broadcast(
+      roomStateMsg(room.id, room.playerEntries, room.isStarted,
+          ownerId: room.ownerId));
 }
 
 void _leave(Connection conn) {
@@ -56,7 +63,8 @@ void _leave(Connection conn) {
     RoomManager.instance.removeIfEmpty(room.id);
   } else {
     room.broadcast(
-        roomStateMsg(room.id, room.playerEntries, room.isStarted));
+        roomStateMsg(room.id, room.playerEntries, room.isStarted,
+            ownerId: room.ownerId));
   }
 }
 
@@ -73,4 +81,40 @@ void _start(Connection conn, DeckConfig? deckConfig) {
       conn.send(errorMsg('Cannot start: need at least 2 players'));
     }
   }
+}
+
+void _addBot(Connection conn) {
+  final room = conn.room;
+  if (room == null) {
+    conn.send(errorMsg('Not in a room'));
+    return;
+  }
+  if (conn.playerId != room.ownerId) {
+    conn.send(errorMsg('Only the room owner can add bots'));
+    return;
+  }
+  if (!room.addBot()) {
+    conn.send(errorMsg('Cannot add bot: room is full or game already started'));
+    return;
+  }
+  room.broadcast(
+      roomStateMsg(room.id, room.playerEntries, false, ownerId: room.ownerId));
+}
+
+void _removeBot(Connection conn, String botId) {
+  final room = conn.room;
+  if (room == null) {
+    conn.send(errorMsg('Not in a room'));
+    return;
+  }
+  if (conn.playerId != room.ownerId) {
+    conn.send(errorMsg('Only the room owner can remove bots'));
+    return;
+  }
+  if (!room.removeBot(botId)) {
+    conn.send(errorMsg('Bot not found'));
+    return;
+  }
+  room.broadcast(
+      roomStateMsg(room.id, room.playerEntries, false, ownerId: room.ownerId));
 }

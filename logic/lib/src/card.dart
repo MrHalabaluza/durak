@@ -11,6 +11,8 @@ class Card {
 
   Card(this.suit, this.rank) : id = _nextId++;
 
+  Card.withId(this.id, this.suit, this.rank);
+
   /// Returns true if this card beats [other] given [trump] suit.
   bool beats(Card other, Suit trump) {
     if (suit == trump && other.suit != trump) return true;
@@ -18,13 +20,14 @@ class Card {
     return false;
   }
 
-  @override
-  bool operator ==(Object other) =>
-      other is Card && suit == other.suit && rank == other.rank;
+  bool sameValue(Card other) => suit == other.suit && rank == other.rank;
 
   @override
-  int get hashCode => Object.hash(suit, rank);
+  bool operator ==(Object other) => other is Card && id == other.id;
 
   @override
-  String toString() => '${rank.name}_of_${suit.name}';
+  int get hashCode => id.hashCode;
+
+  @override
+  String toString() => '${rank.name}_of_${suit.name}[$id]';
 }

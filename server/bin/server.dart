@@ -55,7 +55,9 @@ void main() async {
           if (msg is CreateRoomMsg ||
               msg is JoinRoomMsg ||
               msg is LeaveRoomMsg ||
-              msg is StartGameMsg) {
+              msg is StartGameMsg ||
+              msg is AddBotMsg ||
+              msg is RemoveBotMsg) {
             handleLobby(conn, msg);
           } else if (msg is! AuthMsg) {
             handleGame(conn, msg);
