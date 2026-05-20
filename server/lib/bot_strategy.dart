@@ -107,15 +107,15 @@ class SimpleBot implements BotStrategy {
           return BotTransit(transitCard);
         }
 
-        // Try transfer
+        // Try transfer (one card at a time)
         final transferCards =
             player.hand.where((c) => c.rank == rank).toList();
         if (transferCards.isNotEmpty) {
           final effectiveMax = state.discard.isEmpty ? 5 : 9;
-          final totalAfter = state.table.size + transferCards.length;
-          final uncoveredAfter = uncoveredCount + transferCards.length;
+          final totalAfter = state.table.size + 1;
+          final uncoveredAfter = uncoveredCount + 1;
           if (totalAfter <= effectiveMax && uncoveredAfter <= nextHandSize) {
-            return BotTransfer(transferCards);
+            return BotTransfer([transferCards.first]);
           }
         }
       }
@@ -165,20 +165,15 @@ class SimpleBot implements BotStrategy {
     final defenderHandSize = state.defender.handSize;
     final tableSize = state.table.size;
 
-    // Greedily add as many cards as limits allow
-    final toAdd = <Card>[];
-    for (final card in candidates) {
-      final newUncovered = uncoveredNow + toAdd.length + 1;
-      final newTableSize = tableSize + toAdd.length + 1;
-      if (newTableSize > effectiveMax) break;
-      if (newUncovered > defenderHandSize) break;
-      // In adding phase (not taking), also check adder's hand doesn't go below uncovered count
-      if (state.phase == GamePhase.adding &&
-          newUncovered > player.handSize - toAdd.length) break;
-      toAdd.add(card);
+    // Add one card at a time
+    final card = candidates.first;
+    final newUncovered = uncoveredNow + 1;
+    final newTableSize = tableSize + 1;
+    if (newTableSize > effectiveMax) return const BotPass();
+    if (newUncovered > defenderHandSize) return const BotPass();
+    if (state.phase == GamePhase.adding && newUncovered > player.handSize) {
+      return const BotPass();
     }
-
-    if (toAdd.isEmpty) return const BotPass();
-    return BotAddAttack(toAdd);
+    return BotAddAttack([card]);
   }
 }
