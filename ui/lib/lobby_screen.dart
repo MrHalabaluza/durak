@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:flutter/services.dart';
 import 'package:durak_logic/durak_logic.dart' hide Card;
+import 'package:durak_logic/durak_logic.dart' as logic show Card;
 import 'app_settings.dart';
 import 'online_game_screen.dart';
 import 'settings_screen.dart';
@@ -127,6 +128,21 @@ class _LobbyScreenState extends State<LobbyScreen>
   void _onMessage(Map<String, dynamic> map) {
     switch (map['type'] as String) {
       case 'auth_ok':
+        if (map['deckConfig'] != null) {
+          final list = map['deckConfig'] as List;
+          final counts = <logic.Card, int>{};
+          for (final e in list) {
+            final m = e as Map<String, dynamic>;
+            final count = m['count'] as int;
+            if (count > 0) {
+              counts[logic.Card(
+                Suit.values.byName(m['suit'] as String),
+                Rank.values.byName(m['rank'] as String),
+              )] = count;
+            }
+          }
+          if (mounted) setState(() => _deckConfig = DeckConfig.custom(counts));
+        }
         if (mounted) setState(() => _status = _Status.connected);
         // Step 2: now join or create room
         if (_isCreator) {
@@ -210,16 +226,7 @@ class _LobbyScreenState extends State<LobbyScreen>
 
   void _send(Map<String, dynamic> msg) => _socket?.sink.add(jsonEncode(msg));
 
-  void _startGame() {
-    final config = _deckConfig.counts.entries
-        .map((e) => {
-              'suit': e.key.suit.name,
-              'rank': e.key.rank.name,
-              'count': e.value,
-            })
-        .toList();
-    _send({'type': 'start_game', 'deckConfig': config});
-  }
+  void _startGame() => _send({'type': 'start_game'});
 
   Future<void> _editDeckConfig() async {
     final result = await Navigator.push<AppSettings>(
@@ -235,7 +242,22 @@ class _LobbyScreenState extends State<LobbyScreen>
         ),
       ),
     );
-    if (result != null && mounted) setState(() => _deckConfig = result.deckConfig);
+    if (result != null && mounted) {
+      setState(() => _deckConfig = result.deckConfig);
+      _sendSaveDeck(result.deckConfig);
+    }
+  }
+
+  void _sendSaveDeck(DeckConfig config) {
+    final deckList = config.counts.entries
+        .where((e) => e.value > 0)
+        .map((e) => {
+              'suit': e.key.suit.name,
+              'rank': e.key.rank.name,
+              'count': e.value,
+            })
+        .toList();
+    _send({'type': 'save_deck', 'deckConfig': deckList});
   }
 
   void _addBot() => _send({'type': 'add_bot'});

@@ -15,6 +15,7 @@ import 'package:durak_server/handlers/lobby.dart';
 import 'package:durak_server/handlers/game.dart';
 import 'package:durak_server/room_manager.dart';
 import 'package:durak_server/db/stats_dao.dart';
+import 'package:durak_server/db/deck_dao.dart';
 
 String _hashFast(String hex) {
   final salt = Uint8List.fromList(List.generate(16, (i) => i));
@@ -132,6 +133,7 @@ void main() {
     appDb = AppDatabase.open(':memory:');
     final userDao = UserDao(appDb.db);
     final sessionDao = SessionDao(appDb.db);
+    final deckDao = DeckDao(appDb.db);
     auth = _FastAuthService(userDao, sessionDao);
     RoomManager.init(StatsDao(appDb.db));
 
@@ -154,15 +156,16 @@ void main() {
           if (msg is CreateRoomMsg ||
               msg is JoinRoomMsg ||
               msg is LeaveRoomMsg ||
-              msg is StartGameMsg) {
-            handleLobby(conn, msg);
+              msg is StartGameMsg ||
+              msg is SaveDeckMsg) {
+            handleLobby(conn, msg, deckDao);
           } else if (msg is! AuthMsg) {
             handleGame(conn, msg);
           }
         };
         Connection(
           socket: ws,
-          onMessage: authedDispatch(auth, innerDispatch),
+          onMessage: authedDispatch(auth, deckDao, innerDispatch),
           onClose: (_) {},
         );
       });

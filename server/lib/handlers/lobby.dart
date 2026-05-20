@@ -2,8 +2,9 @@ import 'package:durak_logic/durak_logic.dart';
 import '../connection.dart';
 import '../protocol.dart';
 import '../room_manager.dart';
+import '../db/deck_dao.dart';
 
-void handleLobby(Connection conn, ClientMessage msg) {
+void handleLobby(Connection conn, ClientMessage msg, DeckDao deckDao) {
   switch (msg) {
     case CreateRoomMsg():
       _create(conn);
@@ -11,8 +12,10 @@ void handleLobby(Connection conn, ClientMessage msg) {
       _join(conn, roomId);
     case LeaveRoomMsg():
       _leave(conn);
-    case StartGameMsg(:final deckConfig):
-      _start(conn, deckConfig);
+    case StartGameMsg():
+      _start(conn);
+    case SaveDeckMsg(:final deckConfig):
+      _saveDeck(conn, deckConfig, deckDao);
     case AddBotMsg():
       _addBot(conn);
     case RemoveBotMsg(:final botId):
@@ -68,19 +71,34 @@ void _leave(Connection conn) {
   }
 }
 
-void _start(Connection conn, DeckConfig? deckConfig) {
+void _start(Connection conn) {
   final room = conn.room;
   if (room == null) {
     conn.send(errorMsg('Not in a room'));
     return;
   }
-  if (!room.startGame(deckConfig)) {
+  if (conn.playerId != room.ownerId) {
+    conn.send(errorMsg('Only the room owner can start the game'));
+    return;
+  }
+  if (!room.startGame(conn.savedDeckConfig)) {
     if (room.isStarted) {
       conn.send(errorMsg('Game already started'));
     } else {
       conn.send(errorMsg('Cannot start: need at least 2 players'));
     }
   }
+}
+
+void _saveDeck(Connection conn, DeckConfig deckConfig, DeckDao deckDao) {
+  if (conn.room?.isStarted ?? false) {
+    conn.send(errorMsg('Cannot change deck while game is in progress'));
+    return;
+  }
+  final userId = int.tryParse(conn.playerId ?? '');
+  if (userId == null) return;
+  deckDao.save(userId, deckConfig);
+  conn.savedDeckConfig = deckConfig;
 }
 
 void _addBot(Connection conn) {

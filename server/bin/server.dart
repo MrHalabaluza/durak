@@ -8,6 +8,7 @@ import 'package:durak_server/db/database.dart';
 import 'package:durak_server/db/user_dao.dart';
 import 'package:durak_server/db/session_dao.dart';
 import 'package:durak_server/db/stats_dao.dart';
+import 'package:durak_server/db/deck_dao.dart';
 import 'package:durak_server/auth/auth_service.dart';
 import 'package:durak_server/auth/ws_auth.dart';
 import 'package:durak_server/http/router.dart';
@@ -25,6 +26,7 @@ void main() async {
   final userDao = UserDao(db.db);
   final sessionDao = SessionDao(db.db);
   final statsDao = StatsDao(db.db);
+  final deckDao = DeckDao(db.db);
   final auth = AuthService(userDao, sessionDao);
   RoomManager.init(statsDao);
   final avatarsDir =
@@ -56,9 +58,10 @@ void main() async {
               msg is JoinRoomMsg ||
               msg is LeaveRoomMsg ||
               msg is StartGameMsg ||
+              msg is SaveDeckMsg ||
               msg is AddBotMsg ||
               msg is RemoveBotMsg) {
-            handleLobby(conn, msg);
+            handleLobby(conn, msg, deckDao);
           } else if (msg is! AuthMsg) {
             handleGame(conn, msg);
           }
@@ -66,7 +69,7 @@ void main() async {
 
         Connection(
           socket: ws,
-          onMessage: authedDispatch(auth, innerDispatch),
+          onMessage: authedDispatch(auth, deckDao, innerDispatch),
           onClose: (conn) {
             print('[-] ${conn.playerId ?? '?'}  (active: ${--total})');
             final room = conn.room;

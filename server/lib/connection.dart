@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
+import 'package:durak_logic/durak_logic.dart';
 import 'protocol.dart';
 import 'room.dart';
 
@@ -15,6 +16,8 @@ class Connection {
   Room? room;
   String nickname = '';
   Timer? _authTimer;
+  /// The user's saved deck config, loaded from DB on auth and updated by save_deck.
+  DeckConfig savedDeckConfig = DeckConfig();
 
   Connection({
     required WebSocket socket,

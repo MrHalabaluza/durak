@@ -58,4 +58,12 @@ const List<String> migrations = [
   );
   INSERT INTO server_stats (id, total_games, total_users) VALUES (1, 0, 0);
   ''',
+
+  // v2 — per-user deck config storage
+  '''
+  CREATE TABLE user_decks (
+    user_id     INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    deck_config TEXT    NOT NULL
+  );
+  ''',
 ];

@@ -31,6 +31,11 @@ sealed class ClientMessage {
       'add_bot' => const AddBotMsg(),
       'remove_bot' => RemoveBotMsg(map['botId'] as String),
       'auth' => AuthMsg(map['token'] as String),
+      'save_deck' => SaveDeckMsg(
+          map['deckConfig'] != null
+              ? _parseDeckConfig(map['deckConfig'] as List<dynamic>)
+              : DeckConfig(),
+        ),
       final t => throw FormatException('Unknown message type: $t'),
     };
   }
@@ -104,13 +109,34 @@ class RemoveBotMsg extends ClientMessage {
   const RemoveBotMsg(this.botId);
 }
 
+class SaveDeckMsg extends ClientMessage {
+  final DeckConfig deckConfig;
+  const SaveDeckMsg(this.deckConfig);
+}
+
 // ── Outgoing message builders ───────────────────────────────────────────────
 
 Map<String, dynamic> errorMsg(String message) =>
     {'type': 'error', 'message': message};
 
-Map<String, dynamic> authOkMsg(int userId, String username) =>
-    {'type': 'auth_ok', 'userId': userId.toString(), 'username': username};
+Map<String, dynamic> authOkMsg(
+  int userId,
+  String username,
+  DeckConfig deckConfig,
+) =>
+    {
+      'type': 'auth_ok',
+      'userId': userId.toString(),
+      'username': username,
+      'deckConfig': deckConfig.counts.entries
+          .where((e) => e.value > 0)
+          .map((e) => {
+                'suit': e.key.suit.name,
+                'rank': e.key.rank.name,
+                'count': e.value,
+              })
+          .toList(),
+    };
 
 Map<String, dynamic> roomJoinedMsg(String roomId, String playerId) => {
       'type': 'room_joined',
