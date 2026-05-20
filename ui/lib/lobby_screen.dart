@@ -17,6 +17,14 @@ class LobbyScreen extends StatefulWidget {
   /// null — создать комнату, иначе — ID комнаты для входа
   final String? joinRoomId;
 
+  // Режим возврата из игры: уже открытый сокет + известное состояние комнаты.
+  final WebSocketChannel? resumeSocket;
+  final Stream<Map<String, dynamic>>? resumeStream;
+  final String? resumePlayerId;
+  final String? resumeRoomId;
+  final String? resumeOwnerId;
+  final List<({String id, String nickname, bool isBot})> resumePlayers;
+
   const LobbyScreen({
     super.key,
     required this.host,
@@ -24,6 +32,12 @@ class LobbyScreen extends StatefulWidget {
     this.tls = false,
     required this.token,
     this.joinRoomId,
+    this.resumeSocket,
+    this.resumeStream,
+    this.resumePlayerId,
+    this.resumeRoomId,
+    this.resumeOwnerId,
+    this.resumePlayers = const [],
   });
 
   @override
@@ -58,9 +72,22 @@ class _LobbyScreenState extends State<LobbyScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _connect();
-    });
+    if (widget.resumeSocket != null) {
+      _socket = widget.resumeSocket;
+      _msgStream = widget.resumeStream;
+      _myPlayerId = widget.resumePlayerId;
+      if (widget.resumeRoomId != null) {
+        _roomId = widget.resumeRoomId;
+        _ownerId = widget.resumeOwnerId;
+        _players = List.of(widget.resumePlayers);
+        _status = _Status.connected;
+      }
+      _sub = _msgStream!.listen(_onMessage, onDone: _onDone, onError: _onError);
+    } else {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _connect();
+      });
+    }
   }
 
   @override
@@ -129,6 +156,7 @@ class _LobbyScreenState extends State<LobbyScreen>
                 isBot: p['isBot'] as bool? ?? false,
               );
             }).toList();
+            if (_status != _Status.connected) _status = _Status.connected;
           });
         }
 
@@ -301,7 +329,7 @@ class _LobbyScreenState extends State<LobbyScreen>
         children: [
           if (_roomId != null) _buildRoomCard(),
           const SizedBox(height: 16),
-          if (_isCreator) _buildDeckConfigCard(),
+          if (_isOwner) _buildDeckConfigCard(),
           const SizedBox(height: 16),
           _buildPlayersSection(),
           const SizedBox(height: 16),

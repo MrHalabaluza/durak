@@ -209,6 +209,10 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
   StreamSubscription? _sub;
   _RemoteGS? _gs;
   String? _error;
+  bool _returningToLobby = false;
+  String? _postGameRoomId;
+  String? _postGameOwnerId;
+  List<({String id, String nickname, bool isBot})> _postGamePlayers = [];
 
   final Set<int> _selectedCardIds = {};
   Card? _selectedAttackCard;
@@ -298,7 +302,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
       DeviceOrientation.landscapeRight,
     ]);
     _sub?.cancel();
-    widget.socket.sink.close();
+    if (!_returningToLobby) widget.socket.sink.close();
     super.dispose();
   }
 
@@ -359,6 +363,25 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
           } else if (mounted && _animating) {
             setState(() => _animating = false);
           }
+        });
+      }
+    } else if (type == 'room_state') {
+      if (_gs?.phase != GamePhase.finished) return;
+      final roomId = map['roomId'] as String;
+      final ownerId = map['ownerId'] as String?;
+      final players = (map['players'] as List).map((e) {
+        final p = e as Map<String, dynamic>;
+        return (
+          id: p['id'] as String,
+          nickname: p['nickname'] as String? ?? '',
+          isBot: p['isBot'] as bool? ?? false,
+        );
+      }).toList();
+      if (mounted) {
+        setState(() {
+          _postGameRoomId = roomId;
+          _postGameOwnerId = ownerId;
+          _postGamePlayers = players;
         });
       }
     } else if (type == 'error') {
@@ -1584,17 +1607,26 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
             ],
             const SizedBox(height: 32),
             FilledButton(
-              onPressed: () => Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => LobbyScreen(
-                    host: widget.host,
-                    port: widget.port,
-                    tls: widget.tls,
-                    token: widget.token,
+              onPressed: () {
+                _returningToLobby = true;
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => LobbyScreen(
+                      host: widget.host,
+                      port: widget.port,
+                      tls: widget.tls,
+                      token: widget.token,
+                      resumeSocket: widget.socket,
+                      resumeStream: widget.messageStream,
+                      resumePlayerId: widget.myPlayerId,
+                      resumeRoomId: _postGameRoomId,
+                      resumeOwnerId: _postGameOwnerId,
+                      resumePlayers: _postGamePlayers,
+                    ),
                   ),
-                ),
-              ),
+                );
+              },
               child: const Text('В лобби'),
             ),
           ],

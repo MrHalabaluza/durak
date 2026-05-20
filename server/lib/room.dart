@@ -167,8 +167,19 @@ class Room {
         print('recordGame failed: $e\n$st');
       }
       broadcast({'type': 'game_over', 'loserId': state.loserId});
+      _resetForNewGame();
     }
     _scheduleBotAction();
+  }
+
+  void _resetForNewGame() {
+    if (_connections.isEmpty) return;
+    _game = null;
+    _finishedRecorded = false;
+    _startedAt = null;
+    _botActing = false;
+    _botTimer?.cancel();
+    broadcast(roomStateMsg(id, playerEntries, false, ownerId: _ownerId));
   }
 
   void _scheduleBotAction() {
