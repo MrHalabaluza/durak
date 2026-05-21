@@ -5,8 +5,9 @@ FROM dart:stable AS build
 
 WORKDIR /app/server
 
-# logic/ is a local path dependency — must be available during pub get
+# logic/ and protocol/ are local path dependencies — must be available during pub get
 COPY logic/ /app/logic/
+COPY protocol/ /app/protocol/
 
 COPY server/pubspec.yaml server/pubspec.lock* ./
 RUN dart pub get --no-example
