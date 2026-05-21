@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:flutter/services.dart';
 import 'package:durak_logic/durak_logic.dart' hide Card;
-import 'package:durak_logic/durak_logic.dart' as logic show Card;
+import 'package:durak_protocol/durak_protocol.dart';
 import 'app_settings.dart';
 import 'online_game_screen.dart';
 import 'settings_screen.dart';
@@ -119,7 +119,7 @@ class _LobbyScreenState extends State<LobbyScreen>
       _sub = stream.listen(_onMessage, onDone: _onDone, onError: _onError);
 
       // Step 1: send auth — wait for auth_ok before create/join
-      _send({'type': 'auth', 'token': widget.token});
+      _send(AuthMsg(widget.token).toJson());
     } catch (e) {
       if (mounted) setState(() { _status = _Status.error; _error = e.toString(); });
     }
@@ -129,26 +129,15 @@ class _LobbyScreenState extends State<LobbyScreen>
     switch (map['type'] as String) {
       case 'auth_ok':
         if (map['deckConfig'] != null) {
-          final list = map['deckConfig'] as List;
-          final counts = <logic.Card, int>{};
-          for (final e in list) {
-            final m = e as Map<String, dynamic>;
-            final count = m['count'] as int;
-            if (count > 0) {
-              counts[logic.Card(
-                Suit.values.byName(m['suit'] as String),
-                Rank.values.byName(m['rank'] as String),
-              )] = count;
-            }
-          }
-          if (mounted) setState(() => _deckConfig = DeckConfig.custom(counts));
+          final deck = deckConfigFromJson(map['deckConfig'] as List);
+          if (mounted) setState(() => _deckConfig = deck);
         }
         if (mounted) setState(() => _status = _Status.connected);
         // Step 2: now join or create room
         if (_isCreator) {
-          _send({'type': 'create_room'});
+          _send(const CreateRoomMsg('').toJson());
         } else {
-          _send({'type': 'join_room', 'roomId': widget.joinRoomId});
+          _send(JoinRoomMsg(widget.joinRoomId!, '').toJson());
         }
 
       case 'room_joined':
@@ -226,7 +215,7 @@ class _LobbyScreenState extends State<LobbyScreen>
 
   void _send(Map<String, dynamic> msg) => _socket?.sink.add(jsonEncode(msg));
 
-  void _startGame() => _send({'type': 'start_game'});
+  void _startGame() => _send(const StartGameMsg().toJson());
 
   Future<void> _editDeckConfig() async {
     final result = await Navigator.push<AppSettings>(
@@ -248,23 +237,14 @@ class _LobbyScreenState extends State<LobbyScreen>
     }
   }
 
-  void _sendSaveDeck(DeckConfig config) {
-    final deckList = config.counts.entries
-        .where((e) => e.value > 0)
-        .map((e) => {
-              'suit': e.key.suit.name,
-              'rank': e.key.rank.name,
-              'count': e.value,
-            })
-        .toList();
-    _send({'type': 'save_deck', 'deckConfig': deckList});
-  }
+  void _sendSaveDeck(DeckConfig config) =>
+      _send(SaveDeckMsg(config).toJson());
 
-  void _addBot() => _send({'type': 'add_bot'});
-  void _removeBot(String botId) => _send({'type': 'remove_bot', 'botId': botId});
+  void _addBot() => _send(const AddBotMsg().toJson());
+  void _removeBot(String botId) => _send(RemoveBotMsg(botId).toJson());
 
   void _leave() {
-    _send({'type': 'leave_room'});
+    _send(const LeaveRoomMsg().toJson());
     _socket?.sink.close();
     if (mounted) Navigator.pop(context);
   }

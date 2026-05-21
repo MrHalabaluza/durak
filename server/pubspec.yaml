@@ -9,6 +9,8 @@ environment:
 dependencies:
   durak_logic:
     path: ../logic
+  durak_protocol:
+    path: ../protocol
   sqlite3: ^2.4.0
   crypto: ^3.0.3
   hashlib: ^1.19.0

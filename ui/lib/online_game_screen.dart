@@ -4,6 +4,7 @@ import 'package:flutter/material.dart' hide Card;
 import 'package:flutter/services.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:durak_logic/durak_logic.dart';
+import 'package:durak_protocol/durak_protocol.dart';
 import 'card_widget.dart';
 import 'lobby_screen.dart';
 import 'sort_hand.dart';
@@ -54,100 +55,6 @@ class _LogEntry {
   }
 }
 
-// ── Deserialization ───────────────────────────────────────────────────────────
-
-Card _parseCard(Map<String, dynamic> m) => Card.withId(
-      m['id'] as int,
-      Suit.values.byName(m['suit'] as String),
-      Rank.values.byName(m['rank'] as String),
-    );
-
-Map<String, dynamic> _serCard(Card c) =>
-    {'id': c.id, 'suit': c.suit.name, 'rank': c.rank.name};
-
-// ── Remote state model ────────────────────────────────────────────────────────
-
-class _RemotePlayer {
-  final String id;
-  final String nickname;
-  final int handSize;
-  final bool hasLeft;
-  const _RemotePlayer(this.id, this.nickname, this.handSize, this.hasLeft);
-}
-
-class _RemoteEntry {
-  final Card attack;
-  final Card? defense;
-  const _RemoteEntry(this.attack, this.defense);
-}
-
-class _RemoteGS {
-  final GamePhase phase;
-  final Suit trump;
-  final Card? trumpCard;
-  final int deckSize;
-  final int discardSize;
-  final int attackerIndex;
-  final int defenderIndex;
-  final int currentAdderIndex;
-  final List<String> addingPlayerIds;
-  final List<Card> hand;
-  final List<_RemotePlayer> players;
-  final List<_RemoteEntry> table;
-  final String? loserId;
-
-  const _RemoteGS({
-    required this.phase,
-    required this.trump,
-    this.trumpCard,
-    required this.deckSize,
-    required this.discardSize,
-    required this.attackerIndex,
-    required this.defenderIndex,
-    required this.currentAdderIndex,
-    required this.addingPlayerIds,
-    required this.hand,
-    required this.players,
-    required this.table,
-    this.loserId,
-  });
-
-  factory _RemoteGS.fromJson(Map<String, dynamic> m) => _RemoteGS(
-        phase: GamePhase.values.byName(m['phase'] as String),
-        trump: Suit.values.byName(m['trump'] as String),
-        trumpCard: m['trumpCard'] != null
-            ? _parseCard(m['trumpCard'] as Map<String, dynamic>)
-            : null,
-        deckSize: m['deckSize'] as int,
-        discardSize: m['discardSize'] as int,
-        attackerIndex: m['attackerIndex'] as int,
-        defenderIndex: m['defenderIndex'] as int,
-        currentAdderIndex: m['currentAdderIndex'] as int,
-        addingPlayerIds: List<String>.from(m['addingPlayerIds'] as List),
-        hand: (m['hand'] as List)
-            .map((e) => _parseCard(e as Map<String, dynamic>))
-            .toList(),
-        players: (m['players'] as List).map((e) {
-          final p = e as Map<String, dynamic>;
-          return _RemotePlayer(
-            p['id'] as String,
-            p['nickname'] as String? ?? '',
-            p['handSize'] as int,
-            p['hasLeft'] as bool,
-          );
-        }).toList(),
-        table: (m['table'] as List).map((e) {
-          final t = e as Map<String, dynamic>;
-          return _RemoteEntry(
-            _parseCard(t['attack'] as Map<String, dynamic>),
-            t['defense'] != null
-                ? _parseCard(t['defense'] as Map<String, dynamic>)
-                : null,
-          );
-        }).toList(),
-        loserId: m['loserId'] as String?,
-      );
-}
 
 // ── Flying card ───────────────────────────────────────────────────────────────
 
@@ -207,7 +114,7 @@ class OnlineGameScreen extends StatefulWidget {
 class _OnlineGameScreenState extends State<OnlineGameScreen>
     with WidgetsBindingObserver {
   StreamSubscription? _sub;
-  _RemoteGS? _gs;
+  GameStateView? _gs;
   String? _error;
   bool _returningToLobby = false;
   String? _postGameRoomId;
@@ -250,7 +157,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     WidgetsBinding.instance.addObserver(this);
     SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     if (widget.initialState != null) {
-      final next = _RemoteGS.fromJson(widget.initialState!);
+      final next = GameStateView.fromJson(widget.initialState!);
       _gs = next;
       if (next.players.any((p) => p.handSize > 0)) {
         final prev = _preDealState(next);
@@ -270,11 +177,11 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
 
   /// Синтезирует пре-раздачное состояние: пустые руки, полная колода,
   /// пустой стол и бита. Нужно как `prev` для анимации первой раздачи.
-  static _RemoteGS _preDealState(_RemoteGS next) {
+  static GameStateView _preDealState(GameStateView next) {
     final inHands = next.players.fold<int>(0, (s, p) => s + p.handSize);
     final onTable = next.table
         .fold<int>(0, (s, e) => s + 1 + (e.defense != null ? 1 : 0));
-    return _RemoteGS(
+    return GameStateView(
       phase: next.phase,
       trump: next.trump,
       trumpCard: next.trumpCard,
@@ -283,10 +190,11 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
       attackerIndex: next.attackerIndex,
       defenderIndex: next.defenderIndex,
       currentAdderIndex: next.currentAdderIndex,
+      isFirstTurn: next.isFirstTurn,
       addingPlayerIds: const [],
       hand: const [],
       players: next.players
-          .map((p) => _RemotePlayer(p.id, p.nickname, 0, p.hasLeft))
+          .map((p) => PlayerView(p.id, p.nickname, 0, p.hasLeft))
           .toList(),
       table: const [],
       loserId: null,
@@ -323,7 +231,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     final type = map['type'] as String;
     if (type == 'game_state') {
       final prev = _gs;
-      final next = _RemoteGS.fromJson(map);
+      final next = GameStateView.fromJson(map);
       if (prev != null) _diffAndLog(prev, next);
 
       // Снимок позиций уходящих карт ДО setState — после применения next
@@ -389,13 +297,13 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     }
   }
 
-  void _diffAndLog(_RemoteGS prev, _RemoteGS next) {
+  void _diffAndLog(GameStateView prev, GameStateView next) {
     if (prev.phase == GamePhase.finished) {
       _log.clear();
       return;
     }
 
-    String nick(_RemotePlayer p) => p.nickname.isEmpty ? 'Игрок' : p.nickname;
+    String nick(PlayerView p) => p.nickname.isEmpty ? 'Игрок' : p.nickname;
 
     // Подключение / отключение игроков
     final minLen = prev.players.length < next.players.length
@@ -558,7 +466,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
   }
 
   /// Быстрая проверка: нужна ли анимация между [prev] и [next].
-  bool _willAnimate(_RemoteGS prev, _RemoteGS next) {
+  bool _willAnimate(GameStateView prev, GameStateView next) {
     if (prev.table.isNotEmpty && next.table.isEmpty) return true;
     if (prev.defenderIndex != next.defenderIndex && prev.table.isNotEmpty) {
       return true;
@@ -583,7 +491,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
   /// [prevHandPositions] / [prevTableCellPositions] — снапшоты позиций
   /// уходящих карт, снятые ДО `setState(_gs = next)`. После применения next
   /// слоты могут исчезнуть из layout, и якорь возвращает Offset.zero.
-  void _animateChanges(_RemoteGS prev, _RemoteGS next,
+  void _animateChanges(GameStateView prev, GameStateView next,
       {Duration step = const Duration(milliseconds: 150),
       Map<int, Offset> prevHandPositions = const {},
       Map<int, Offset> prevTableCellPositions = const {}}) {
@@ -826,7 +734,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
   bool get _isTokenHolder =>
       _gs!.players[_gs!.currentAdderIndex].id == widget.myPlayerId;
 
-  int _currentActorIndex(_RemoteGS gs) => switch (gs.phase) {
+  int _currentActorIndex(GameStateView gs) => switch (gs.phase) {
         GamePhase.attacking => gs.attackerIndex,
         GamePhase.defending => gs.defenderIndex,
         _ => gs.currentAdderIndex,
@@ -843,43 +751,30 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     });
   }
 
-  void _attack() => _doAction({
-        'type': 'attack',
-        'cards': _selectedCards.map(_serCard).toList(),
-      });
+  void _attack() => _doAction(AttackMsg(_selectedCards).toJson());
 
   void _defend() {
     if (_selectedAttackCard == null || _selectedCards.length != 1) return;
-    _doAction({
-      'type': 'defend',
-      'attackCard': _serCard(_selectedAttackCard!),
-      'defenseCard': _serCard(_selectedCards.first),
-    });
+    _doAction(DefendMsg(_selectedAttackCard!, _selectedCards.first).toJson());
   }
 
-  void _transfer() => _doAction({
-        'type': 'transfer',
-        'cards': _selectedCards.map(_serCard).toList(),
-      });
+  void _transfer() => _doAction(TransferMsg(_selectedCards).toJson());
 
   void _transit() {
     if (_selectedCards.length != 1) return;
-    _doAction({'type': 'transit', 'card': _serCard(_selectedCards.first)});
+    _doAction(TransitMsg(_selectedCards.first).toJson());
   }
 
-  void _addAttack() => _doAction({
-        'type': 'add_attack',
-        'cards': _selectedCards.map(_serCard).toList(),
-      });
+  void _addAttack() => _doAction(AddAttackMsg(_selectedCards).toJson());
 
-  void _pass() => _doAction({'type': 'pass'});
+  void _pass() => _doAction(const PassMsg().toJson());
 
-  void _take() => _doAction({'type': 'take'});
+  void _take() => _doAction(const TakeMsg().toJson());
 
-  Card? _cardById(_RemoteGS gs, int id) =>
+  Card? _cardById(GameStateView gs, int id) =>
       gs.hand.where((c) => c.id == id).firstOrNull;
 
-  void _attackByDrag(_RemoteGS gs, int cardId) {
+  void _attackByDrag(GameStateView gs, int cardId) {
     final dragged = _cardById(gs, cardId);
     if (dragged == null) return;
     final cards =
@@ -889,34 +784,26 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     final isAdding =
         gs.phase == GamePhase.adding || gs.phase == GamePhase.taking;
     _lastDraggedCardId = cardId;
-    _doAction({
-      'type': isAdding ? 'add_attack' : 'attack',
-      'cards': cards.map(_serCard).toList(),
-    });
+    _doAction(isAdding
+        ? AddAttackMsg(cards).toJson()
+        : AttackMsg(cards).toJson());
   }
 
   void _defendByDrag(Card attackCard, int cardId) {
     final defense = _cardById(_gs!, cardId);
     if (defense == null) return;
     _lastDraggedCardId = cardId;
-    _doAction({
-      'type': 'defend',
-      'attackCard': _serCard(attackCard),
-      'defenseCard': _serCard(defense),
-    });
+    _doAction(DefendMsg(attackCard, defense).toJson());
   }
 
-  void _transferByDrag(_RemoteGS gs, int cardId) {
+  void _transferByDrag(GameStateView gs, int cardId) {
     final dragged = _cardById(gs, cardId);
     if (dragged == null) return;
     final cards = _selectedCardIds.contains(cardId) && _selectedCardIds.isNotEmpty
         ? _selectedCards
         : [dragged];
     _lastDraggedCardId = cardId;
-    _doAction({
-      'type': 'transfer',
-      'cards': cards.map(_serCard).toList(),
-    });
+    _doAction(TransferMsg(cards).toJson());
   }
 
   // ── Log strip ─────────────────────────────────────────────────────────────
@@ -1056,7 +943,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
 
   // ── Table area ────────────────────────────────────────────────────────────
 
-  Widget _buildTableArea(_RemoteGS gs) {
+  Widget _buildTableArea(GameStateView gs) {
     final myIndex = gs.players.indexWhere((p) => p.id == widget.myPlayerId);
     final count = gs.players.length;
     final positions = _seatPositions(count);
@@ -1090,7 +977,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
 
   // ── PlayerSeat ────────────────────────────────────────────────────────────
 
-  Widget _buildPlayerSeat(_RemoteGS gs, int playerIndex) {
+  Widget _buildPlayerSeat(GameStateView gs, int playerIndex) {
     final p = gs.players[playerIndex];
     final isActor = playerIndex == _currentActorIndex(gs);
     final isDefender = playerIndex == gs.defenderIndex;
@@ -1163,12 +1050,12 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
 
   // ── Status bar ────────────────────────────────────────────────────────────
 
-  String _playerName(_RemoteGS gs, int index) {
+  String _playerName(GameStateView gs, int index) {
     final p = gs.players[index];
     return p.nickname.isEmpty ? 'Игрок ${index + 1}' : p.nickname;
   }
 
-  Widget _buildStatusBar(_RemoteGS gs) {
+  Widget _buildStatusBar(GameStateView gs) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       child: Row(
@@ -1182,7 +1069,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     );
   }
 
-  Widget _buildDeckStatus(_RemoteGS gs) {
+  Widget _buildDeckStatus(GameStateView gs) {
     if (gs.deckSize == 0) return SizedBox(key: _deckKey, width: kCardWidth);
     return SizedBox(
       key: _deckKey,
@@ -1222,7 +1109,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     );
   }
 
-  Widget _buildDiscardStatus(_RemoteGS gs) {
+  Widget _buildDiscardStatus(GameStateView gs) {
     if (gs.discardSize == 0) return SizedBox(key: _discardKey, width: kCardWidth);
     return SizedBox(
       key: _discardKey,
@@ -1243,7 +1130,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     );
   }
 
-  Widget _buildStatusText(_RemoteGS gs) {
+  Widget _buildStatusText(GameStateView gs) {
     final (line1, line2) = switch (gs.phase) {
       GamePhase.attacking => (
           '${_playerName(gs, gs.attackerIndex)} ходит',
@@ -1310,7 +1197,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
 
   // ── Table grid ────────────────────────────────────────────────────────────
 
-  Widget _buildTableGrid(_RemoteGS gs) {
+  Widget _buildTableGrid(GameStateView gs) {
     return Center(
       key: _tableKey,
       child: Column(
@@ -1338,7 +1225,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     );
   }
 
-  Widget _tableCell(_RemoteGS gs, int i) {
+  Widget _tableCell(GameStateView gs, int i) {
     if (i >= gs.table.length) return _buildEmptyTableCell(gs);
     final entry = gs.table[i];
     if (_hiddenCardIds.contains(entry.attack.id)) {
@@ -1347,7 +1234,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     return _buildTableEntry(entry, gs);
   }
 
-  Widget _buildEmptyTableCell(_RemoteGS gs) {
+  Widget _buildEmptyTableCell(GameStateView gs) {
     final isTransfer = _imDefender && gs.phase == GamePhase.defending;
     final canDrop = isTransfer ||
         (_imAttacker && gs.phase == GamePhase.attacking) ||
@@ -1383,7 +1270,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     );
   }
 
-  Widget _buildTableEntry(_RemoteEntry entry, _RemoteGS gs) {
+  Widget _buildTableEntry(TableEntryView entry, GameStateView gs) {
     final canDefend =
         _imDefender && gs.phase == GamePhase.defending && entry.defense == null;
     final isSelected = _selectedAttackCard == entry.attack;
@@ -1425,7 +1312,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
 
   // ── Hand ──────────────────────────────────────────────────────────────────
 
-  Widget _buildHand(_RemoteGS gs) {
+  Widget _buildHand(GameStateView gs) {
     if (gs.hand.isEmpty) {
       return SizedBox(
         key: _handKey,
@@ -1487,7 +1374,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
 
   // ── Actions bar ───────────────────────────────────────────────────────────
 
-  Widget _buildActionsBar(_RemoteGS gs) {
+  Widget _buildActionsBar(GameStateView gs) {
     final sel = _selectedCards;
     final hasSel = sel.isNotEmpty;
     final hasSingle = sel.length == 1;
@@ -1531,7 +1418,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
 
   // ── FAB: Take / Pass ──────────────────────────────────────────────────────
 
-  Widget? _buildFab(_RemoteGS gs) {
+  Widget? _buildFab(GameStateView gs) {
     final phase = gs.phase;
     if (_imDefender &&
         (phase == GamePhase.defending || phase == GamePhase.adding)) {
@@ -1557,7 +1444,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
 
   // ── Game over ─────────────────────────────────────────────────────────────
 
-  Widget _buildGameOver(_RemoteGS gs) {
+  Widget _buildGameOver(GameStateView gs) {
     final loserId = gs.loserId;
     final isLoser = loserId == widget.myPlayerId;
     final isDraw = loserId == null;

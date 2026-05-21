@@ -88,6 +88,13 @@ packages:
       relative: true
     source: path
     version: "0.1.0"
+  durak_protocol:
+    dependency: "direct main"
+    description:
+      path: "../protocol"
+      relative: true
+    source: path
+    version: "1.0.0"
   ffi:
     dependency: transitive
     description:

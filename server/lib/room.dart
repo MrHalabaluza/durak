@@ -137,6 +137,7 @@ class Room {
   }
 
   void broadcastGameState() {
+    if (_game == null) return;
     final state = _game!.state;
     final addingIds = _game!.addingPlayerIds;
     final nicks = {
