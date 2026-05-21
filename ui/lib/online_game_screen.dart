@@ -31,6 +31,7 @@ class OnlineGameScreen extends StatefulWidget {
   final int port;
   final bool tls;
   final String token;
+  final DeckConfig deckConfig;
 
   const OnlineGameScreen({
     super.key,
@@ -42,6 +43,7 @@ class OnlineGameScreen extends StatefulWidget {
     required this.port,
     required this.tls,
     required this.token,
+    required this.deckConfig,
   });
 
   @override
@@ -964,6 +966,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
                       resumeRoomId: _postGameRoomId,
                       resumeOwnerId: _postGameOwnerId,
                       resumePlayers: _postGamePlayers,
+                      resumeDeckConfig: widget.deckConfig,
                     ),
                   ),
                 );

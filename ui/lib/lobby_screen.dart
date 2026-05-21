@@ -25,6 +25,7 @@ class LobbyScreen extends StatefulWidget {
   final String? resumeRoomId;
   final String? resumeOwnerId;
   final List<({String id, String nickname, bool isBot})> resumePlayers;
+  final DeckConfig? resumeDeckConfig;
 
   const LobbyScreen({
     super.key,
@@ -39,6 +40,7 @@ class LobbyScreen extends StatefulWidget {
     this.resumeRoomId,
     this.resumeOwnerId,
     this.resumePlayers = const [],
+    this.resumeDeckConfig,
   });
 
   @override
@@ -63,7 +65,7 @@ class _LobbyScreenState extends State<LobbyScreen>
   bool _gameStarted = false;
   Map<String, dynamic>? _latestGameState;
 
-  DeckConfig _deckConfig = DeckConfig();
+  late DeckConfig _deckConfig;
 
   bool get _isCreator => widget.joinRoomId == null;
   bool get _isOwner => _myPlayerId != null &&
@@ -72,6 +74,7 @@ class _LobbyScreenState extends State<LobbyScreen>
   @override
   void initState() {
     super.initState();
+    _deckConfig = widget.resumeDeckConfig ?? DeckConfig();
     WidgetsBinding.instance.addObserver(this);
     if (widget.resumeSocket != null) {
       _socket = widget.resumeSocket;
@@ -187,6 +190,7 @@ class _LobbyScreenState extends State<LobbyScreen>
                   port: widget.port,
                   tls: widget.tls,
                   token: widget.token,
+                  deckConfig: _deckConfig,
                 ),
               ),
             );
