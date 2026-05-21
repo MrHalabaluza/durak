@@ -60,11 +60,10 @@ Sealed-классы `ClientMessage` описывают все сообщения
 
 ```
 SetupScreen (main.dart)
-├── LOCAL: GameScreen — локальная игра, экземпляр Game прямо в виджете
-└── ONLINE: LobbyScreen → OnlineGameScreen — WebSocket, broadcast stream
+└── LobbyScreen → OnlineGameScreen — WebSocket, broadcast stream
 ```
 
-`OnlineGameScreen` подписывается на broadcast stream WebSocket; состояние игры приходит как `_RemoteGS` (только своя рука, размеры рук других).
+Локального оффлайн-режима нет. `OnlineGameScreen` подписывается на broadcast stream WebSocket; состояние игры приходит как `_RemoteGS` (только своя рука, размеры рук других).
 
 `CardWidget` поддерживает tap для выбора и drag для размещения карт.
 

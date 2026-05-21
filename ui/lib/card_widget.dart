@@ -5,9 +5,6 @@ const double kCardWidth = 56;
 const double kCardHeight = 80;
 const double kCardAspectRatio = kCardWidth / kCardHeight;
 
-/// Stable display identifier for a card, invariant to list re-ordering.
-int cardDisplayId(Card c) => c.suit.index * 13 + c.rank.index;
-
 class CardWidget extends StatelessWidget {
   final Card? card;
   final bool faceUp;
