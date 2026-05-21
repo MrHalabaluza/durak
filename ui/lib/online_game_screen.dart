@@ -5,77 +5,14 @@ import 'package:flutter/services.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:durak_logic/durak_logic.dart';
 import 'package:durak_protocol/durak_protocol.dart';
-import 'card_widget.dart';
 import 'lobby_screen.dart';
-import 'sort_hand.dart';
-
-// ── Card string helper ────────────────────────────────────────────────────────
-
-String _cardStr(Card c) {
-  const suits = {
-    Suit.diamonds: '♦', Suit.hearts: '♥', Suit.clubs: '♣', Suit.spades: '♠',
-  };
-  const ranks = {
-    Rank.two: '2', Rank.three: '3', Rank.four: '4', Rank.five: '5',
-    Rank.six: '6', Rank.seven: '7', Rank.eight: '8', Rank.nine: '9',
-    Rank.ten: '10', Rank.jack: 'В', Rank.queen: 'Д', Rank.king: 'К', Rank.ace: 'Т',
-  };
-  return '${suits[c.suit]}${ranks[c.rank]}';
-}
-
-// ── Log entry ─────────────────────────────────────────────────────────────────
-
-class _LogEntry {
-  final DateTime timestamp;
-  final String actorNickname;
-  final String type; // 'attack','add_attack','defend','transfer','take','beat','connected','disconnected'
-  final List<Card> cards;
-
-  const _LogEntry({
-    required this.timestamp,
-    required this.actorNickname,
-    required this.type,
-    this.cards = const [],
-  });
-
-  String get text {
-    final cStr = cards.isEmpty ? '' : ' ${cards.map(_cardStr).join(' ')}';
-    final a = actorNickname.isEmpty ? '' : '$actorNickname ';
-    return switch (type) {
-      'attack'     => '$aатаковал$cStr',
-      'add_attack' => '$aподкинул$cStr',
-      'defend'     => '$aотбил$cStr',
-      'transfer'   => '$aперевёл$cStr',
-      'take'         => '$aвзял карты',
-      'beat'         => 'Бито',
-      'connected'    => '${actorNickname.isEmpty ? 'Игрок' : actorNickname} подключился',
-      'disconnected' => '${actorNickname.isEmpty ? 'Игрок' : actorNickname} отключился',
-      _              => '$a$type$cStr',
-    };
-  }
-}
-
-
-// ── Flying card ───────────────────────────────────────────────────────────────
-
-class _FlyingCard {
-  final int id;
-  final Card? card;
-  final bool faceUp;
-  final Offset from;
-  final Offset to;
-  final Duration duration;
-  const _FlyingCard({
-    required this.id,
-    required this.card,
-    required this.faceUp,
-    required this.from,
-    required this.to,
-    this.duration = const Duration(milliseconds: 200),
-  });
-}
-
-// ── Widget ────────────────────────────────────────────────────────────────────
+import 'widgets/actions_bar.dart';
+import 'widgets/card_overlay.dart';
+import 'widgets/deck_corner.dart';
+import 'widgets/discard_corner.dart';
+import 'widgets/log_panel.dart';
+import 'widgets/my_hand.dart';
+import 'widgets/table_area.dart';
 
 class OnlineGameScreen extends StatefulWidget {
   /// Used only for sending messages to the server.
@@ -124,7 +61,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
   final Set<int> _selectedCardIds = {};
   Card? _selectedAttackCard;
 
-  final List<_LogEntry> _log = [];
+  final List<LogEntry> _log = [];
 
   // GlobalKey-якоря для вычисления позиций анимации
   final _deckKey    = GlobalKey();
@@ -142,7 +79,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
       _handSlotKeys.putIfAbsent(cardId, () => GlobalKey());
 
   // Overlay-анимация
-  final _flying     = <_FlyingCard>[];
+  final _flying     = <FlyingCard>[];
   int  _nextFlyId   = 0;
   bool _animating   = false;
   int  _animGeneration = 0;
@@ -313,12 +250,12 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
       final pp = prev.players[i];
       final np = next.players[i];
       if (!pp.hasLeft && np.hasLeft) {
-        _log.add(_LogEntry(
+        _log.add(LogEntry(
             timestamp: DateTime.now(),
             actorNickname: nick(pp),
             type: 'disconnected'));
       } else if (pp.hasLeft && !np.hasLeft) {
-        _log.add(_LogEntry(
+        _log.add(LogEntry(
             timestamp: DateTime.now(),
             actorNickname: nick(np),
             type: 'connected'));
@@ -331,9 +268,9 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     // Table cleared
     if (prev.table.isNotEmpty && next.table.isEmpty) {
       if (next.discardSize > prev.discardSize) {
-        _log.add(_LogEntry(timestamp: DateTime.now(), actorNickname: '', type: 'beat'));
+        _log.add(LogEntry(timestamp: DateTime.now(), actorNickname: '', type: 'beat'));
       } else {
-        _log.add(_LogEntry(
+        _log.add(LogEntry(
           timestamp: DateTime.now(),
           actorNickname: nick(prev.players[prev.defenderIndex]),
           type: 'take',
@@ -345,7 +282,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     // Defender changed → transfer/transit
     if (prev.defenderIndex != next.defenderIndex && prev.table.isNotEmpty) {
       final newCards = nextAttacks.difference(prevAttacks).toList();
-      _log.add(_LogEntry(
+      _log.add(LogEntry(
         timestamp: DateTime.now(),
         actorNickname: nick(prev.players[prev.defenderIndex]),
         type: 'transfer',
@@ -358,14 +295,14 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     final newAttacks = nextAttacks.difference(prevAttacks);
     if (newAttacks.isNotEmpty) {
       if (prev.table.isEmpty) {
-        _log.add(_LogEntry(
+        _log.add(LogEntry(
           timestamp: DateTime.now(),
           actorNickname: nick(next.players[next.attackerIndex]),
           type: 'attack',
           cards: newAttacks.toList(),
         ));
       } else {
-        _log.add(_LogEntry(
+        _log.add(LogEntry(
           timestamp: DateTime.now(),
           actorNickname: nick(prev.players[prev.currentAdderIndex]),
           type: 'add_attack',
@@ -380,7 +317,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
       final prevEntry =
           prev.table.where((e) => e.attack == nextEntry.attack).firstOrNull;
       if (prevEntry != null && prevEntry.defense == null) {
-        _log.add(_LogEntry(
+        _log.add(LogEntry(
           timestamp: DateTime.now(),
           actorNickname: nick(prev.players[prev.defenderIndex]),
           type: 'defend',
@@ -428,7 +365,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
       final id = _nextFlyId++;
       final cid = card?.id;
       setState(() {
-        _flying.add(_FlyingCard(
+        _flying.add(FlyingCard(
           id: id,
           card: card,
           faceUp: faceUp,
@@ -696,30 +633,6 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     if (seq == 0) setState(() => _animating = false);
   }
 
-  Widget _buildCardOverlay() {
-    return Stack(
-      key: _overlayKey,
-      children: [
-        for (final fly in _flying)
-          TweenAnimationBuilder<Offset>(
-            key: ValueKey(fly.id),
-            tween: Tween(begin: fly.from, end: fly.to),
-            duration: fly.duration,
-            curve: Curves.easeInOut,
-            builder: (_, offset, child) =>
-                Positioned(left: offset.dx, top: offset.dy, child: child!),
-            child: IgnorePointer(
-              child: CardWidget(
-                card: fly.card,
-                faceUp: fly.faceUp,
-                width: kCardWidth,
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-
   // ── Helpers ───────────────────────────────────────────────────────────────
 
   List<Card> get _selectedCards => _gs!.hand
@@ -733,12 +646,6 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
   bool get _canAdd => _gs!.addingPlayerIds.contains(widget.myPlayerId);
   bool get _isTokenHolder =>
       _gs!.players[_gs!.currentAdderIndex].id == widget.myPlayerId;
-
-  int _currentActorIndex(GameStateView gs) => switch (gs.phase) {
-        GamePhase.attacking => gs.attackerIndex,
-        GamePhase.defending => gs.defenderIndex,
-        _ => gs.currentAdderIndex,
-      };
 
   // ── Actions ───────────────────────────────────────────────────────────────
 
@@ -806,107 +713,9 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     _doAction(TransferMsg(cards).toJson());
   }
 
-  // ── Log strip ─────────────────────────────────────────────────────────────
-
-  void _showLogSheet() {
-    showModalBottomSheet(
-      context: context,
-      builder: (ctx) => Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Text('История партии',
-                style: Theme.of(ctx).textTheme.titleMedium),
-          ),
-          Expanded(
-            child: _log.isEmpty
-                ? const Center(
-                    child: Text('Нет действий',
-                        style: TextStyle(color: Colors.grey)))
-                : ListView.builder(
-                    reverse: true,
-                    itemCount: _log.length,
-                    itemBuilder: (ctx, i) {
-                      final e = _log[_log.length - 1 - i];
-                      final t = e.timestamp;
-                      final ts =
-                          '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}:${t.second.toString().padLeft(2, '0')}';
-                      return ListTile(
-                        dense: true,
-                        leading: Text(ts,
-                            style: const TextStyle(
-                                color: Colors.grey, fontSize: 11)),
-                        title: Text(e.text,
-                            style: const TextStyle(fontSize: 13)),
-                      );
-                    },
-                  ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLogStrip() {
-    final last = _log.isEmpty ? null : _log.last;
-    return GestureDetector(
-      onTap: _showLogSheet,
-      child: Container(
-        width: double.infinity,
-        color: Colors.black38,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-        child: Row(
-          children: [
-            const Icon(Icons.history, size: 13, color: Colors.white54),
-            const SizedBox(width: 6),
-            Expanded(
-              child: Text(
-                last?.text ?? 'Лог действий',
-                style: const TextStyle(fontSize: 12, color: Colors.white70),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            const Icon(Icons.expand_less, size: 13, color: Colors.white38),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ── Layout constants ──────────────────────────────────────────────────────
+  // ── Layout constant ───────────────────────────────────────────────────────
 
   static const double _handHeight = 116.0;
-
-  // ── Seat positions ────────────────────────────────────────────────────────
-
-  static List<Alignment> _seatPositions(int count) => switch (count) {
-        2 => const [Alignment(0.00, -0.72)],
-        3 => const [Alignment(-0.50, -0.72), Alignment(0.50, -0.72)],
-        4 => const [
-            Alignment(-0.88, 0.15),
-            Alignment(0.00, -0.72),
-            Alignment(0.88, 0.15),
-          ],
-        5 => const [
-            Alignment(-0.88, 0.15),
-            Alignment(-0.45, -0.72),
-            Alignment(0.45, -0.72),
-            Alignment(0.88, 0.15),
-          ],
-        6 => const [
-            Alignment(-0.88, 0.15),
-            Alignment(-0.55, -0.72),
-            Alignment(0.00, -0.72),
-            Alignment(0.55, -0.72),
-            Alignment(0.88, 0.15),
-          ],
-        _ => const [],
-      };
-
-  static EdgeInsets _tablePadding(int playerCount) =>
-      playerCount <= 3
-          ? const EdgeInsets.fromLTRB(8, 140, 8, 8)
-          : const EdgeInsets.fromLTRB(80, 140, 80, 8);
 
   // ── Build ─────────────────────────────────────────────────────────────────
 
@@ -920,6 +729,8 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     }
     if (gs.phase == GamePhase.finished) return _buildGameOver(gs);
 
+    final myIndex = gs.players.indexWhere((p) => p.id == widget.myPlayerId);
+
     return Scaffold(
       body: Stack(
         children: [
@@ -928,121 +739,65 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
               children: [
                 if (_error != null) _buildErrorBanner(),
                 _buildStatusBar(gs),
-                Expanded(child: _buildTableArea(gs)),
-                _buildActionsBar(gs),
-                _buildLogStrip(),
-                SizedBox(height: _handHeight, child: _buildHand(gs)),
+                Expanded(
+                  child: TableArea(
+                    gs: gs,
+                    myIndex: myIndex,
+                    hiddenCardIds: _hiddenCardIds,
+                    animating: _animating,
+                    selectedAttackCard: _selectedAttackCard,
+                    imAttacker: _imAttacker,
+                    imDefender: _imDefender,
+                    canAdd: _canAdd,
+                    isTokenHolder: _isTokenHolder,
+                    tableKey: _tableKey,
+                    seatKeys: _seatKeys,
+                    tableCellKeys: _tableCellKeys,
+                    onAttackByDrag: (id) => _attackByDrag(gs, id),
+                    onDefendByDrag: _defendByDrag,
+                    onTransferByDrag: (id) => _transferByDrag(gs, id),
+                    onSelectAttackCard: (c) =>
+                        setState(() => _selectedAttackCard = c),
+                    onTake: _take,
+                    onPass: _pass,
+                  ),
+                ),
+                ActionsBar(
+                  phase: gs.phase,
+                  imAttacker: _imAttacker,
+                  imDefender: _imDefender,
+                  canAdd: _canAdd,
+                  selectedCards: _selectedCards,
+                  selectedAttackCard: _selectedAttackCard,
+                  onAttack: _attack,
+                  onDefend: _defend,
+                  onTransfer: _transfer,
+                  onTransit: _transit,
+                  onAddAttack: _addAttack,
+                ),
+                LogPanel(log: _log),
+                SizedBox(
+                  height: _handHeight,
+                  child: MyHand(
+                    gs: gs,
+                    hiddenCardIds: _hiddenCardIds,
+                    animating: _animating,
+                    selectedCardIds: _selectedCardIds,
+                    handKey: _handKey,
+                    handSlotKey: _handSlotKey,
+                    onCardTap: (id) => setState(() {
+                      if (_selectedCardIds.contains(id)) {
+                        _selectedCardIds.remove(id);
+                      } else {
+                        _selectedCardIds.add(id);
+                      }
+                    }),
+                  ),
+                ),
               ],
             ),
           ),
-          _buildCardOverlay(),
-        ],
-      ),
-    );
-  }
-
-  // ── Table area ────────────────────────────────────────────────────────────
-
-  Widget _buildTableArea(GameStateView gs) {
-    final myIndex = gs.players.indexWhere((p) => p.id == widget.myPlayerId);
-    final count = gs.players.length;
-    final positions = _seatPositions(count);
-
-    return Stack(
-      children: [
-        Positioned.fill(
-          child: Padding(
-            padding: _tablePadding(count),
-            child: _buildTableGrid(gs),
-          ),
-        ),
-        for (int si = 1; si < count; si++)
-          Align(
-            alignment: positions[si - 1],
-            child: FractionalTranslation(
-              translation: positions[si - 1].y < 0
-                  ? const Offset(0, -0.15)
-                  : Offset.zero,
-              child: _buildPlayerSeat(gs, (myIndex + si) % count),
-            ),
-          ),
-        Positioned(
-          right: 8,
-          bottom: 8,
-          child: _buildFab(gs) ?? const SizedBox.shrink(),
-        ),
-      ],
-    );
-  }
-
-  // ── PlayerSeat ────────────────────────────────────────────────────────────
-
-  Widget _buildPlayerSeat(GameStateView gs, int playerIndex) {
-    final p = gs.players[playerIndex];
-    final isActor = playerIndex == _currentActorIndex(gs);
-    final isDefender = playerIndex == gs.defenderIndex;
-
-    final borderColor = isActor
-        ? (isDefender ? Colors.lightBlue : Colors.orange)
-        : Colors.grey.shade700;
-    final borderWidth = isActor ? 2.5 : 1.0;
-
-    return Container(
-      key: _seatKeys[playerIndex],
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
-      constraints: const BoxConstraints(maxWidth: 96),
-      decoration: BoxDecoration(
-        color: Colors.black54,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: borderColor, width: borderWidth),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _buildCardFan(p.handSize),
-          const SizedBox(height: 3),
-          Text(
-            p.hasLeft ? '—' : (p.nickname.isEmpty ? '?' : p.nickname),
-            style: const TextStyle(fontSize: 10, color: Colors.white70),
-            overflow: TextOverflow.ellipsis,
-            maxLines: 1,
-          ),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.style, size: 9, color: Colors.grey),
-              const SizedBox(width: 2),
-              Text(
-                '${p.handSize}',
-                style: const TextStyle(fontSize: 10, color: Colors.grey),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCardFan(int count) {
-    final shown = count.clamp(0, 5);
-    if (shown == 0) {
-      return const SizedBox(width: kCardWidth, height: kCardHeight);
-    }
-    const step = 8.0;
-    return SizedBox(
-      width: kCardWidth + (shown - 1) * step,
-      height: kCardHeight,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          for (int i = 0; i < shown; i++)
-            Positioned(
-              left: i * step,
-              child: Transform.rotate(
-                angle: (i - (shown - 1) / 2) * 0.12,
-                child: const CardWidget(faceUp: false, width: kCardWidth),
-              ),
-            ),
+          CardOverlay(flying: _flying, overlayKey: _overlayKey),
         ],
       ),
     );
@@ -1050,84 +805,30 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
 
   // ── Status bar ────────────────────────────────────────────────────────────
 
-  String _playerName(GameStateView gs, int index) {
-    final p = gs.players[index];
-    return p.nickname.isEmpty ? 'Игрок ${index + 1}' : p.nickname;
-  }
-
   Widget _buildStatusBar(GameStateView gs) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildDeckStatus(gs),
+          DeckCorner(
+            deckSize: gs.deckSize,
+            trumpCard: gs.trumpCard,
+            deckKey: _deckKey,
+          ),
           Expanded(child: _buildStatusText(gs)),
-          _buildDiscardStatus(gs),
+          DiscardCorner(
+            discardSize: gs.discardSize,
+            discardKey: _discardKey,
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildDeckStatus(GameStateView gs) {
-    if (gs.deckSize == 0) return SizedBox(key: _deckKey, width: kCardWidth);
-    return SizedBox(
-      key: _deckKey,
-      child: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        SizedBox(
-          width: kCardWidth,
-          height: kCardHeight,
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              if (gs.trumpCard != null)
-                Positioned(
-                  left: kCardWidth / 2,
-                  top: (kCardHeight - kCardWidth) / 2,
-                  child: RotatedBox(
-                    quarterTurns: 1,
-                    child: CardWidget(
-                      card: gs.trumpCard,
-                      faceUp: true,
-                      width: kCardWidth,
-                    ),
-                  ),
-                ),
-              const CardWidget(faceUp: false, width: kCardWidth),
-            ],
-          ),
-        ),
-        const SizedBox(height: 3),
-        Text(
-          '${gs.deckSize}',
-          style: const TextStyle(color: Colors.grey, fontSize: 11),
-        ),
-      ],
-    ),
-    );
-  }
-
-  Widget _buildDiscardStatus(GameStateView gs) {
-    if (gs.discardSize == 0) return SizedBox(key: _discardKey, width: kCardWidth);
-    return SizedBox(
-      key: _discardKey,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Transform.rotate(
-            angle: 0.12,
-            child: const CardWidget(faceUp: false, width: kCardWidth),
-          ),
-          const SizedBox(height: 3),
-          Text(
-            '${gs.discardSize}',
-            style: const TextStyle(color: Colors.grey, fontSize: 11),
-          ),
-        ],
-      ),
-    );
+  String _playerName(GameStateView gs, int index) {
+    final p = gs.players[index];
+    return p.nickname.isEmpty ? 'Игрок ${index + 1}' : p.nickname;
   }
 
   Widget _buildStatusText(GameStateView gs) {
@@ -1193,253 +894,6 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
         ),
       ),
     );
-  }
-
-  // ── Table grid ────────────────────────────────────────────────────────────
-
-  Widget _buildTableGrid(GameStateView gs) {
-    return Center(
-      key: _tableKey,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (int row = 0; row < 3; row++)
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (int col = 0; col < 3; col++)
-                  Padding(
-                    padding: const EdgeInsets.all(4),
-                    child: SizedBox(
-                      key: _tableCellKeys[row * 3 + col],
-                      width: 72,
-                      height: 96,
-                      child: _tableCell(gs, row * 3 + col),
-                    ),
-                  ),
-              ],
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _tableCell(GameStateView gs, int i) {
-    if (i >= gs.table.length) return _buildEmptyTableCell(gs);
-    final entry = gs.table[i];
-    if (_hiddenCardIds.contains(entry.attack.id)) {
-      return _buildEmptyTableCell(gs);
-    }
-    return _buildTableEntry(entry, gs);
-  }
-
-  Widget _buildEmptyTableCell(GameStateView gs) {
-    final isTransfer = _imDefender && gs.phase == GamePhase.defending;
-    final canDrop = isTransfer ||
-        (_imAttacker && gs.phase == GamePhase.attacking) ||
-        (_canAdd &&
-            (gs.phase == GamePhase.adding || gs.phase == GamePhase.taking));
-
-    return DragTarget<int>(
-      onWillAcceptWithDetails: (_) => canDrop && !_animating,
-      onAcceptWithDetails: (d) => isTransfer
-          ? _transferByDrag(gs, d.data)
-          : _attackByDrag(gs, d.data),
-      builder: (context, candidateData, _) {
-        final hovering = candidateData.isNotEmpty;
-        return AnimatedContainer(
-          duration: const Duration(milliseconds: 120),
-          decoration: BoxDecoration(
-            border: Border.all(
-              color: hovering ? Colors.orange.withAlpha(160) : Colors.white12,
-              width: hovering ? 2 : 1,
-            ),
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: hovering
-              ? Center(
-                  child: Text(
-                    isTransfer ? 'Перевести' : 'Бросить',
-                    style: const TextStyle(color: Colors.orange, fontSize: 11),
-                  ),
-                )
-              : null,
-        );
-      },
-    );
-  }
-
-  Widget _buildTableEntry(TableEntryView entry, GameStateView gs) {
-    final canDefend =
-        _imDefender && gs.phase == GamePhase.defending && entry.defense == null;
-    final isSelected = _selectedAttackCard == entry.attack;
-
-    return DragTarget<int>(
-      onWillAcceptWithDetails: (_) => canDefend && !_animating,
-      onAcceptWithDetails: (d) => _defendByDrag(entry.attack, d.data),
-      builder: (context, candidateData, _) {
-        final hovering = candidateData.isNotEmpty;
-        return GestureDetector(
-          onTap: canDefend
-              ? () => setState(() =>
-                  _selectedAttackCard = isSelected ? null : entry.attack)
-              : null,
-          child: SizedBox(
-            width: 72,
-            height: 96,
-            child: Stack(
-              children: [
-                CardWidget(
-                  card: entry.attack,
-                  selected: isSelected || hovering,
-                  highlighted: canDefend && !isSelected && !hovering,
-                ),
-                if (entry.defense != null &&
-                    !_hiddenCardIds.contains(entry.defense!.id))
-                  Positioned(
-                    top: 16,
-                    left: 16,
-                    child: CardWidget(card: entry.defense!),
-                  ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  // ── Hand ──────────────────────────────────────────────────────────────────
-
-  Widget _buildHand(GameStateView gs) {
-    if (gs.hand.isEmpty) {
-      return SizedBox(
-        key: _handKey,
-        child: const Center(
-          child: Text('Нет карт', style: TextStyle(color: Colors.grey)),
-        ),
-      );
-    }
-    final sorted = sortHand(gs.hand, gs.trump);
-    return SizedBox(
-      key: _handKey,
-      child: SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-      child: Row(
-        children: [
-          for (final card in sorted)
-            Padding(
-              key: _handSlotKey(card.id),
-              padding: const EdgeInsets.only(right: 6),
-              child: Visibility(
-                visible: !_hiddenCardIds.contains(card.id),
-                maintainSize: true,
-                maintainAnimation: true,
-                maintainState: true,
-                child: Draggable<int>(
-                    data: card.id,
-                    maxSimultaneousDrags: _animating ? 0 : 1,
-                    feedback: Material(
-                      color: Colors.transparent,
-                      child: Transform.scale(
-                        scale: 1.1,
-                        child: CardWidget(card: card, selected: true),
-                      ),
-                    ),
-                    childWhenDragging: Opacity(
-                      opacity: 0.35,
-                      child: CardWidget(card: card),
-                    ),
-                    child: CardWidget(
-                      card: card,
-                      selected: _selectedCardIds.contains(card.id),
-                      onTap: _animating ? null : () => setState(() {
-                        if (_selectedCardIds.contains(card.id)) {
-                          _selectedCardIds.remove(card.id);
-                        } else {
-                          _selectedCardIds.add(card.id);
-                        }
-                      }),
-                    ),
-                  ),
-                ),
-              ),
-        ],
-      ),
-    ),
-    );
-  }
-
-  // ── Actions bar ───────────────────────────────────────────────────────────
-
-  Widget _buildActionsBar(GameStateView gs) {
-    final sel = _selectedCards;
-    final hasSel = sel.isNotEmpty;
-    final hasSingle = sel.length == 1;
-    final hasTarget = _selectedAttackCard != null;
-    final phase = gs.phase;
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
-      child: Wrap(
-        spacing: 6,
-        runSpacing: 6,
-        children: [
-          if (phase == GamePhase.attacking)
-            FilledButton(
-              onPressed: _imAttacker && hasSel ? _attack : null,
-              child: const Text('Атаковать'),
-            ),
-          if (phase == GamePhase.defending) ...[
-            FilledButton(
-              onPressed: _imDefender && hasTarget && hasSingle ? _defend : null,
-              child: const Text('Отбить'),
-            ),
-            OutlinedButton(
-              onPressed: _imDefender && hasSel ? _transfer : null,
-              child: const Text('Перевести'),
-            ),
-            OutlinedButton(
-              onPressed: _imDefender && hasSingle ? _transit : null,
-              child: const Text('Проездной'),
-            ),
-          ],
-          if (phase == GamePhase.adding || phase == GamePhase.taking)
-            FilledButton(
-              onPressed: _canAdd && hasSel ? _addAttack : null,
-              child: const Text('Подкинуть'),
-            ),
-        ],
-      ),
-    );
-  }
-
-  // ── FAB: Take / Pass ──────────────────────────────────────────────────────
-
-  Widget? _buildFab(GameStateView gs) {
-    final phase = gs.phase;
-    if (_imDefender &&
-        (phase == GamePhase.defending || phase == GamePhase.adding)) {
-      return FloatingActionButton.extended(
-        heroTag: 'take_fab',
-        onPressed: _take,
-        label: const Text('Взять'),
-        icon: const Icon(Icons.download_rounded, size: 18),
-        backgroundColor: Colors.red.shade700,
-      );
-    }
-    if (_isTokenHolder &&
-        (phase == GamePhase.adding || phase == GamePhase.taking)) {
-      return FloatingActionButton.extended(
-        heroTag: 'pass_fab',
-        onPressed: _pass,
-        label: const Text('Пас'),
-        icon: const Icon(Icons.skip_next_rounded, size: 18),
-      );
-    }
-    return null;
   }
 
   // ── Game over ─────────────────────────────────────────────────────────────
