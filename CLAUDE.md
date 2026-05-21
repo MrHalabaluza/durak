@@ -6,10 +6,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 DTFool — карточная игра «Двойной переводной дурак». Платформы: iOS, Android, Desktop. Стек: Flutter + Dart.
 
-Три независимых модуля в монорепо:
+Четыре модуля в монорепо:
 - `logic/` — чистая Dart-библиотека, игровые правила и состояние (без I/O и Flutter-зависимостей)
-- `server/` — WebSocket-сервер мультиплеера, зависит от `logic/`
-- `ui/` — Flutter-приложение, зависит от `logic/`
+- `protocol/` — общий wire-протокол: `ClientMessage`, `GameStateView`, сериализация карт/колоды
+- `server/` — WebSocket-сервер мультиплеера, зависит от `logic/` и `protocol/`
+- `ui/` — Flutter-приложение, зависит от `logic/` и `protocol/`
 
 ## Commands
 
@@ -34,11 +35,14 @@ cd logic && dart pub get && dart test
 
 ```
 logic/ (pure Dart, no deps)
-   ▲           ▲
-server/     ui/
+   ▲               ▲
+protocol/          │
+   ▲       ▲       │
+server/    ui/─────┘
 ```
 
-`ui/pubspec.yaml` и `server/pubspec.yaml` подключают `logic/` через `path: ../logic`.
+`protocol/pubspec.yaml` подключает `logic/` через `path: ../logic`.
+`server/pubspec.yaml` и `ui/pubspec.yaml` подключают оба через `path:`.
 
 ### Game state machine (`logic/lib/src/game.dart`)
 
@@ -50,9 +54,13 @@ server/     ui/
 
 `GamePhase` enum: `attacking → defending → adding → taking → finished`.
 
-### Networking (`server/lib/protocol.dart`)
+### Shared protocol (`protocol/lib/`)
 
-Sealed-классы `ClientMessage` описывают все сообщения клиента. `ClientMessage.parse(json)` десериализует входящее сообщение. Сервер отправляет ответы через хелперы `roomJoinedMsg`, `gameStateMsg`, `errorMsg` и т.д.
+- `src/messages.dart` — sealed-классы `ClientMessage` с `toJson()` (клиент) и `parse()` (сервер).
+- `src/views.dart` — `GameStateView`, `PlayerView`, `TableEntryView`: DTO между сервером и UI.
+- `src/codec.dart` — сериализация `Card` и `DeckConfig`.
+
+`server/lib/protocol.dart` реэкспортирует типы из `durak_protocol` и добавляет серверные билдеры: `errorMsg`, `authOkMsg`, `roomJoinedMsg`, `roomStateMsg`, `gameStateMsg`.
 
 Сервер назначает каждому клиенту уникальный `playerId` (8-байтовый hex). Клиент не выбирает его сам.
 
@@ -63,9 +71,9 @@ SetupScreen (main.dart)
 └── LobbyScreen → OnlineGameScreen — WebSocket, broadcast stream
 ```
 
-Локального оффлайн-режима нет. `OnlineGameScreen` подписывается на broadcast stream WebSocket; состояние игры приходит как `_RemoteGS` (только своя рука, размеры рук других).
+Локального оффлайн-режима нет. `OnlineGameScreen` подписывается на broadcast stream WebSocket; состояние игры приходит как `GameStateView` (только своя рука, размеры рук других игроков).
 
-`CardWidget` поддерживает tap для выбора и drag для размещения карт.
+`CardWidget` поддерживает tap для выбора и drag для размещения карт. Виджеты экрана живут в `ui/lib/widgets/`: `TableArea`, `MyHand`, `ActionsBar`, `LogPanel`, `DeckCorner`, `DiscardCorner`, `PlayerSeat`, `CardOverlay`.
 
 ## Game Rules Key Points (full spec in `logic/CLAUDE.md`)
 
