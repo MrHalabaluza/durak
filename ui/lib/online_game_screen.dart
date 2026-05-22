@@ -7,7 +7,8 @@ import 'package:durak_logic/durak_logic.dart';
 import 'package:durak_protocol/durak_protocol.dart';
 import 'lobby_screen.dart';
 import 'widgets/actions_bar.dart';
-import 'widgets/card_overlay.dart';
+import 'animations/card_animation_controller.dart';
+import 'animations/card_overlay.dart';
 import 'widgets/deck_corner.dart';
 import 'widgets/discard_corner.dart';
 import 'widgets/log_panel.dart';
@@ -65,34 +66,15 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
 
   final List<LogEntry> _log = [];
 
-  // GlobalKey-якоря для вычисления позиций анимации
-  final _deckKey    = GlobalKey();
-  final _discardKey = GlobalKey();
-  final _tableKey   = GlobalKey();
-  final _handKey    = GlobalKey();
-  final _overlayKey = GlobalKey();
-  // один ключ на слот игрока (по playerIndex, 0..5)
-  final _seatKeys      = List.generate(6, (_) => GlobalKey());
-  // ключи на каждую из 9 ячеек грида стола (по индексу 0..8)
-  final _tableCellKeys = List.generate(9, (_) => GlobalKey());
-  // ключи на конкретные слоты руки (по card.id, лениво)
-  final Map<int, GlobalKey> _handSlotKeys = {};
-  GlobalKey _handSlotKey(int cardId) =>
-      _handSlotKeys.putIfAbsent(cardId, () => GlobalKey());
-
-  // Overlay-анимация
-  final _flying     = <FlyingCard>[];
-  int  _nextFlyId   = 0;
-  bool _animating   = false;
-  int  _animGeneration = 0;
-  // card.id карты, перенесённой drag-and-drop — её анимация пропускается.
-  int? _lastDraggedCardId;
-  // card.id карт, которые сейчас в полёте — статичный слой их скрывает.
-  final Set<int> _hiddenCardIds = {};
+  late final CardAnimationController _animCtrl;
 
   @override
   void initState() {
     super.initState();
+    _animCtrl = CardAnimationController(
+      setState: setState,
+      isMounted: () => mounted,
+    );
     WidgetsBinding.instance.addObserver(this);
     SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     if (widget.initialState != null) {
@@ -100,14 +82,8 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
       _gs = next;
       if (next.players.any((p) => p.handSize > 0)) {
         final prev = _preDealState(next);
-        _animating = true;
-        final initGen = _animGeneration;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted && initGen == _animGeneration) {
-            _animateChanges(prev, next,
-                step: const Duration(milliseconds: 40));
-          }
-        });
+        _animCtrl.scheduleAnimateChanges(prev, next, widget.myPlayerId,
+            step: const Duration(milliseconds: 40));
       }
     }
     _sub = widget.messageStream
@@ -157,10 +133,9 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden) {
-      if (mounted) _cancelAnimations();
+      if (mounted) _animCtrl.cancelAnimations();
     } else if (state == AppLifecycleState.resumed && mounted) {
-      // Bump generation to invalidate any postFrameCallbacks queued while inactive.
-      _cancelAnimations();
+      _animCtrl.cancelAnimations();
     }
   }
 
@@ -174,21 +149,21 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
       if (prev != null) _diffAndLog(prev, next);
 
       // Снимок позиций уходящих карт ДО setState — после применения next
-      // соответствующие слоты руки/ячейки могут исчезнуть из layout
-      // (карта сыграна, стол очищен и т.п.), и якорь будет недоступен.
+      // соответствующие слоты руки/ячейки могут исчезнуть из layout.
       final prevHandPositions = <int, Offset>{};
       final prevTableCellPositions = <int, Offset>{};
       if (prev != null) {
         for (final card in prev.hand) {
-          final key = _handSlotKeys[card.id];
+          final key = _animCtrl.handSlotKeys[card.id];
           if (key?.currentContext != null) {
-            prevHandPositions[card.id] = _anchorOf(key!);
+            prevHandPositions[card.id] = _animCtrl.anchorOf(key!);
           }
         }
         for (int i = 0;
-            i < prev.table.length && i < _tableCellKeys.length;
+            i < prev.table.length && i < _animCtrl.tableCellKeys.length;
             i++) {
-          prevTableCellPositions[i] = _anchorOf(_tableCellKeys[i]);
+          prevTableCellPositions[i] =
+              _animCtrl.anchorOf(_animCtrl.tableCellKeys[i]);
         }
       }
 
@@ -198,19 +173,10 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
         _selectedAttackCard = null;
         _error = null;
       });
-      if (prev != null && _willAnimate(prev, next)) {
-        // Флаг устанавливается до postFrameCallback, чтобы build уже видел его
-        _animating = true;
-        final animGen = _animGeneration;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted && animGen == _animGeneration) {
-            _animateChanges(prev, next,
-                prevHandPositions: prevHandPositions,
-                prevTableCellPositions: prevTableCellPositions);
-          } else if (mounted && _animating) {
-            setState(() => _animating = false);
-          }
-        });
+      if (prev != null && _animCtrl.willAnimate(prev, next)) {
+        _animCtrl.scheduleAnimateChanges(prev, next, widget.myPlayerId,
+            prevHandPositions: prevHandPositions,
+            prevTableCellPositions: prevTableCellPositions);
       }
     } else if (type == 'room_state') {
       if (_gs?.phase != GamePhase.finished) return;
@@ -340,301 +306,6 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
   void _send(Map<String, dynamic> msg) =>
       widget.socket.sink.add(jsonEncode(msg));
 
-  // ── Animation ─────────────────────────────────────────────────────────────
-
-  /// Позиция виджета [key] в системе координат overlay-стека.
-  Offset _anchorOf(GlobalKey key) {
-    final box = key.currentContext?.findRenderObject() as RenderBox?;
-    if (box == null || !box.hasSize) return Offset.zero;
-    final global = box.localToGlobal(Offset.zero);
-    final overlayBox =
-        _overlayKey.currentContext?.findRenderObject() as RenderBox?;
-    return overlayBox != null ? overlayBox.globalToLocal(global) : global;
-  }
-
-  /// Запускает анимацию одной «летящей» карты из [from] в [to].
-  void _fly({
-    required Card? card,
-    required bool faceUp,
-    required Offset from,
-    required Offset to,
-    Duration duration = const Duration(milliseconds: 200),
-    Duration startDelay = Duration.zero,
-  }) {
-    final gen = _animGeneration;
-    Future.delayed(startDelay, () {
-      if (!mounted || gen != _animGeneration) return;
-      final id = _nextFlyId++;
-      final cid = card?.id;
-      setState(() {
-        _flying.add(FlyingCard(
-          id: id,
-          card: card,
-          faceUp: faceUp,
-          from: from,
-          to: to,
-          duration: duration,
-        ));
-        if (cid != null) _hiddenCardIds.add(cid);
-      });
-      // Запускаем таймер удаления только ПОСЛЕ первого кадра твина —
-      // иначе Future.delayed(duration) начался бы примерно на ~16 мс
-      // раньше первого кадра анимации и карта снималась бы до того,
-      // как доедет до to.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        Future.delayed(duration, () {
-          if (!mounted || gen != _animGeneration) return;
-          setState(() {
-            _flying.removeWhere((f) => f.id == id);
-            if (cid != null) _hiddenCardIds.remove(cid);
-            if (_flying.isEmpty) _animating = false;
-          });
-        });
-      });
-    });
-  }
-
-  void _cancelAnimations() {
-    _animGeneration++;
-    setState(() {
-      _flying.clear();
-      _hiddenCardIds.clear();
-      _animating = false;
-    });
-  }
-
-  /// Быстрая проверка: нужна ли анимация между [prev] и [next].
-  bool _willAnimate(GameStateView prev, GameStateView next) {
-    if (prev.table.isNotEmpty && next.table.isEmpty) return true;
-    if (prev.defenderIndex != next.defenderIndex && prev.table.isNotEmpty) {
-      return true;
-    }
-    if (next.deckSize < prev.deckSize) return true;
-    final pa = prev.table.map((e) => e.attack).toSet();
-    final na = next.table.map((e) => e.attack).toSet();
-    if (na.difference(pa).isNotEmpty) return true;
-    for (final ne in next.table) {
-      if (ne.defense == null) continue;
-      final pe = prev.table.where((e) => e.attack == ne.attack).firstOrNull;
-      if (pe != null && pe.defense == null) return true;
-    }
-    return false;
-  }
-
-  /// Вычисляет diff между [prev] и [next] и запускает _fly() для каждой карты.
-  /// Вызывается из postFrameCallback (GlobalKeys уже привязаны к новому layout).
-  /// [step] — задержка между запусками соседних карт; для раздачи имеет смысл
-  /// сделать заметно меньше дефолта, иначе при 4–6 игроках вся последовательность
-  /// растянется на 5+ секунд.
-  /// [prevHandPositions] / [prevTableCellPositions] — снапшоты позиций
-  /// уходящих карт, снятые ДО `setState(_gs = next)`. После применения next
-  /// слоты могут исчезнуть из layout, и якорь возвращает Offset.zero.
-  void _animateChanges(GameStateView prev, GameStateView next,
-      {Duration step = const Duration(milliseconds: 150),
-      Map<int, Offset> prevHandPositions = const {},
-      Map<int, Offset> prevTableCellPositions = const {}}) {
-    final draggedId = _lastDraggedCardId;
-    _lastDraggedCardId = null;
-    int seq = 0;
-
-    final myIndex = next.players.indexWhere((p) => p.id == widget.myPlayerId);
-    final deckPos    = _anchorOf(_deckKey);
-    final discardPos = _anchorOf(_discardKey);
-    final tablePos   = _anchorOf(_tableKey);
-    final handPos    = _anchorOf(_handKey);
-
-    Offset seatPos(int pi) => _anchorOf(_seatKeys[pi]);
-
-    /// Текущая позиция слота руки (для целей DEAL/TAKE-в-мою-руку).
-    /// Если слот не смонтирован (карта была скрыта или ещё не появилась),
-    /// fallback на общий handPos.
-    Offset handSlotPos(int cardId) {
-      final key = _handSlotKeys[cardId];
-      if (key?.currentContext != null) {
-        final p = _anchorOf(key!);
-        if (p != Offset.zero) return p;
-      }
-      return handPos;
-    }
-
-    /// Источник для карты, уходящей из руки конкретного игрока.
-    /// Если это я и снапшот есть — точка слота из prev; иначе — seat/hand.
-    Offset srcFromPlayer(Card card, int pi) {
-      if (pi == myIndex) {
-        final p = prevHandPositions[card.id];
-        if (p != null) return p;
-        return handPos;
-      }
-      return seatPos(pi);
-    }
-
-    /// Источник для карты, уходящей из ячейки стола в prev.
-    Offset prevTableSrc(int prevIdx, {Offset shift = Offset.zero}) =>
-        (prevTableCellPositions[prevIdx] ?? tablePos) + shift;
-
-    /// Цель — конкретная ячейка стола, где карта живёт в next.
-    Offset tableDest(Card card, {Offset shift = Offset.zero}) {
-      final i = next.table.indexWhere(
-          (e) => e.attack == card || e.defense == card);
-      if (i >= 0 && i < _tableCellKeys.length) {
-        final p = _anchorOf(_tableCellKeys[i]);
-        if (p != Offset.zero) return p + shift;
-      }
-      return tablePos + shift;
-    }
-
-    final prevAttacks = prev.table.map((e) => e.attack).toSet();
-    final nextAttacks = next.table.map((e) => e.attack).toSet();
-
-    // BEAT: стол → бита
-    if (prev.table.isNotEmpty &&
-        next.table.isEmpty &&
-        next.discardSize > prev.discardSize) {
-      for (int i = 0; i < prev.table.length; i++) {
-        final e = prev.table[i];
-        _fly(card: e.attack, faceUp: true,
-            from: prevTableSrc(i), to: discardPos,
-            startDelay: step * seq++);
-        if (e.defense != null) {
-          _fly(card: e.defense, faceUp: true,
-              from: prevTableSrc(i, shift: const Offset(16, 16)),
-              to: discardPos,
-              startDelay: step * seq++);
-        }
-      }
-    }
-
-    // TAKE: стол → рука отбивающегося
-    if (prev.table.isNotEmpty &&
-        next.table.isEmpty &&
-        next.discardSize == prev.discardSize) {
-      final isMine = prev.defenderIndex == myIndex;
-      final dest = isMine ? handPos : seatPos(prev.defenderIndex);
-      for (int i = 0; i < prev.table.length; i++) {
-        final e = prev.table[i];
-        _fly(card: e.attack, faceUp: isMine,
-            from: prevTableSrc(i), to: dest,
-            startDelay: step * seq++);
-        if (e.defense != null) {
-          _fly(card: e.defense, faceUp: isMine,
-              from: prevTableSrc(i, shift: const Offset(16, 16)),
-              to: dest,
-              startDelay: step * seq++);
-        }
-      }
-    }
-
-    // TRANSFER / TRANSIT: защитник сменился по ходу
-    if (prev.defenderIndex != next.defenderIndex && prev.table.isNotEmpty) {
-      final newCards = nextAttacks.difference(prevAttacks);
-      if (newCards.isNotEmpty) {
-        // TRANSFER: новая карта(ы) кладётся на стол
-        for (final card in newCards) {
-          if (card.id == draggedId) continue;
-          _fly(card: card, faceUp: true,
-              from: srcFromPlayer(card, prev.defenderIndex),
-              to: tableDest(card),
-              startDelay: step * seq++);
-        }
-      } else {
-        // TRANSIT: козырь нужного ранга показан и остаётся в руке.
-        // Визуально — карта вылетает из руки/посадки бывшего защитника
-        // в сторону нового и исчезает; в статике она вернётся в руку,
-        // т.к. _hiddenCardIds сбросится по завершении полёта.
-        final fromIdx = prev.defenderIndex;
-        final toIdx = next.defenderIndex;
-        final from = fromIdx == myIndex ? handPos : seatPos(fromIdx);
-        final to = toIdx == myIndex ? handPos : seatPos(toIdx);
-
-        Card? showCard;
-        bool faceUp = false;
-        if (fromIdx == myIndex) {
-          final uncoveredRanks = next.table
-              .where((e) => e.defense == null)
-              .map((e) => e.attack.rank)
-              .toSet();
-          showCard = next.hand
-              .where((c) =>
-                  c.suit == next.trump && uncoveredRanks.contains(c.rank))
-              .firstOrNull;
-          faceUp = showCard != null;
-        }
-
-        _fly(card: showCard, faceUp: faceUp,
-            from: from, to: to,
-            duration: const Duration(milliseconds: 300),
-            startDelay: step * seq++);
-      }
-    }
-
-    // ATTACK / ADD_ATTACK (только если не было transfer).
-    // Инвариант: addAttack в logic/game.dart не меняет currentAdderIndex,
-    // pass меняет, но карт на столе не добавляет. Значит prev.currentAdderIndex
-    // в этой ветке — игрок, который только что подкинул карту.
-    if (prev.defenderIndex == next.defenderIndex) {
-      for (final card in nextAttacks.difference(prevAttacks)) {
-        if (card.id == draggedId) continue;
-        final srcIndex =
-            prev.table.isEmpty ? next.attackerIndex : prev.currentAdderIndex;
-        _fly(card: card, faceUp: true,
-            from: srcFromPlayer(card, srcIndex),
-            to: tableDest(card),
-            startDelay: step * seq++);
-      }
-    }
-
-    // DEFEND: карта защиты из руки на стол
-    for (final ne in next.table) {
-      if (ne.defense == null) continue;
-      if (ne.defense!.id == draggedId) continue;
-      final pe = prev.table.where((e) => e.attack == ne.attack).firstOrNull;
-      if (pe != null && pe.defense == null) {
-        _fly(card: ne.defense, faceUp: true,
-            from: srcFromPlayer(ne.defense!, prev.defenderIndex),
-            to: tableDest(ne.defense!, shift: const Offset(16, 16)),
-            startDelay: step * seq++);
-      }
-    }
-
-    // DEAL / REFILL: колода → руки
-    if (next.deckSize < prev.deckSize) {
-      // При взятии карты стола уже анимированы блоком TAKE — исключаем их,
-      // чтобы не анимировать повторно как добор из колоды.
-      final isTake = prev.table.isNotEmpty &&
-          next.table.isEmpty &&
-          next.discardSize == prev.discardSize;
-      final takenIds = isTake
-          ? prev.table
-              .expand<Card>((e) => [e.attack, if (e.defense != null) e.defense!])
-              .map((c) => c.id)
-              .toSet()
-          : const <int>{};
-
-      final prevHandIds = prev.hand.map((c) => c.id).toSet();
-      for (final card in next.hand) {
-        if (!prevHandIds.contains(card.id) && !takenIds.contains(card.id)) {
-          _fly(card: card, faceUp: true,
-              from: deckPos, to: handSlotPos(card.id),
-              startDelay: step * seq++);
-        }
-      }
-      for (int i = 0; i < next.players.length; i++) {
-        if (i == myIndex) continue;
-        final rawDelta = next.players[i].handSize - prev.players[i].handSize;
-        final tableOffset = isTake && i == prev.defenderIndex ? takenIds.length : 0;
-        final delta = rawDelta - tableOffset;
-        for (int k = 0; k < delta; k++) {
-          _fly(card: null, faceUp: false, from: deckPos, to: seatPos(i),
-              startDelay: step * seq++);
-        }
-      }
-    }
-
-    // Если ни одна анимация не запущена — сброс флага
-    if (seq == 0) setState(() => _animating = false);
-  }
-
   // ── Helpers ───────────────────────────────────────────────────────────────
 
   List<Card> get _selectedCards => _gs!.hand
@@ -652,7 +323,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
   // ── Actions ───────────────────────────────────────────────────────────────
 
   void _doAction(Map<String, dynamic> msg) {
-    if (_animating) return;
+    if (_animCtrl.animating) return;
     _send(msg);
     setState(() {
       _selectedCardIds.clear();
@@ -692,7 +363,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
             : [dragged];
     final isAdding =
         gs.phase == GamePhase.adding || gs.phase == GamePhase.taking;
-    _lastDraggedCardId = cardId;
+    _animCtrl.lastDraggedCardId = cardId;
     _doAction(isAdding
         ? AddAttackMsg(cards).toJson()
         : AttackMsg(cards).toJson());
@@ -701,7 +372,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
   void _defendByDrag(Card attackCard, int cardId) {
     final defense = _cardById(_gs!, cardId);
     if (defense == null) return;
-    _lastDraggedCardId = cardId;
+    _animCtrl.lastDraggedCardId = cardId;
     _doAction(DefendMsg(attackCard, defense).toJson());
   }
 
@@ -711,7 +382,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
     final cards = _selectedCardIds.contains(cardId) && _selectedCardIds.isNotEmpty
         ? _selectedCards
         : [dragged];
-    _lastDraggedCardId = cardId;
+    _animCtrl.lastDraggedCardId = cardId;
     _doAction(TransferMsg(cards).toJson());
   }
 
@@ -745,16 +416,16 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
                   child: TableArea(
                     gs: gs,
                     myIndex: myIndex,
-                    hiddenCardIds: _hiddenCardIds,
-                    animating: _animating,
+                    hiddenCardIds: _animCtrl.hiddenCardIds,
+                    animating: _animCtrl.animating,
                     selectedAttackCard: _selectedAttackCard,
                     imAttacker: _imAttacker,
                     imDefender: _imDefender,
                     canAdd: _canAdd,
                     isTokenHolder: _isTokenHolder,
-                    tableKey: _tableKey,
-                    seatKeys: _seatKeys,
-                    tableCellKeys: _tableCellKeys,
+                    tableKey: _animCtrl.tableKey,
+                    seatKeys: _animCtrl.seatKeys,
+                    tableCellKeys: _animCtrl.tableCellKeys,
                     onAttackByDrag: (id) => _attackByDrag(gs, id),
                     onDefendByDrag: _defendByDrag,
                     onTransferByDrag: (id) => _transferByDrag(gs, id),
@@ -782,11 +453,11 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
                   height: _handHeight,
                   child: MyHand(
                     gs: gs,
-                    hiddenCardIds: _hiddenCardIds,
-                    animating: _animating,
+                    hiddenCardIds: _animCtrl.hiddenCardIds,
+                    animating: _animCtrl.animating,
                     selectedCardIds: _selectedCardIds,
-                    handKey: _handKey,
-                    handSlotKey: _handSlotKey,
+                    handKey: _animCtrl.handKey,
+                    handSlotKey: _animCtrl.handSlotKey,
                     onCardTap: (id) => setState(() {
                       if (_selectedCardIds.contains(id)) {
                         _selectedCardIds.remove(id);
@@ -799,7 +470,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
               ],
             ),
           ),
-          CardOverlay(flying: _flying, overlayKey: _overlayKey),
+          CardOverlay(flying: _animCtrl.flying, overlayKey: _animCtrl.overlayKey),
         ],
       ),
     );
@@ -816,12 +487,12 @@ class _OnlineGameScreenState extends State<OnlineGameScreen>
           DeckCorner(
             deckSize: gs.deckSize,
             trumpCard: gs.trumpCard,
-            deckKey: _deckKey,
+            deckKey: _animCtrl.deckKey,
           ),
           Expanded(child: _buildStatusText(gs)),
           DiscardCorner(
             discardSize: gs.discardSize,
-            discardKey: _discardKey,
+            discardKey: _animCtrl.discardKey,
           ),
         ],
       ),
